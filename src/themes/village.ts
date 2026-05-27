@@ -58,9 +58,13 @@ const scatter: Placement[] = [
 export const villageTheme: Theme = {
   id: 'village',
   name: 'Village Camp',
+  // The Fields sheet is a dirt-on-grass autotile set: almost every cell is
+  // cobblestone, and only index 37 is solid grass. Scattering the dirt tiles
+  // reads as noise, so the field is laid as solid grass (a dirt-path autotiler
+  // could come later).
   ground: {
     sheet: { path: '/assets/themes/village/fields.png', frameSize: 32, margin: 0 },
-    tiles: [0, 1, 8, 9, 18]
+    tiles: [37]
   },
   sprites: Object.fromEntries(spriteList.map((entry) => [entry.key, entry])),
   characters: {
