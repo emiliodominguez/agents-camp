@@ -35,36 +35,76 @@ const spriteList: ObjectSprite[] = [
   sprite('tent-1', 'tent/1', 2, 1),
   sprite('tent-2', 'tent/2', 2, 1),
   sprite('lamp', 'decor/9', 1, 1),
-  sprite('stall', 'decor/14', 2, 1),
   sprite('barrel', 'box/1', 1, 1),
   sprite('crate', 'box/3', 1, 1),
-  sprite('stone', 'stone/1', 1, 1)
+  sprite('stone', 'stone/1', 1, 1),
+  sprite('rock', 'stone/3', 1, 1),
+  // Grass tufts and flowers are decoration only — they never block movement.
+  sprite('tuft-1', 'grass/2', 0, 0),
+  sprite('tuft-2', 'grass/4', 0, 0),
+  sprite('tuft-3', 'grass/6', 0, 0)
 ]
 
-/** Decorative objects dotted around the camp. */
+/**
+ * Authored walkable path: a horizontal avenue across the camp at row 7, with
+ * vertical spurs up to each agent's standing tile and down to the player spawn.
+ * The agents stand at columns 3, 7, 10, 12 (row 5) and 12 (row 8); the player
+ * spawns at (7, 9).
+ */
+function buildPath(): Array<{ column: number; row: number }> {
+  const cells: Array<{ column: number; row: number }> = []
+  const avenueRow = 7
+
+  for (let column = 3; column <= 12; column += 1) {
+    cells.push({ column, row: avenueRow })
+  }
+
+  // Spurs up to each agent (columns 3, 7, 10) and the player spur down.
+  for (const column of [3, 7, 10]) {
+    for (let row = 5; row < avenueRow; row += 1) {
+      cells.push({ column, row })
+    }
+  }
+
+  // Explorer sits lower-right (12, 8); player spawn (7, 9).
+  cells.push({ column: 12, row: 8 })
+  cells.push({ column: 7, row: 8 })
+  cells.push({ column: 7, row: 9 })
+
+  return cells
+}
+
+/**
+ * Decorative and obstacle objects. Lamps light the path; barrels, crates and
+ * stones sit off the path as obstacles to walk around; grass tufts add texture.
+ */
 const scatter: Placement[] = [
-  { sprite: 'lamp', column: 2, row: 2 },
-  { sprite: 'lamp', column: 11, row: 2 },
-  { sprite: 'lamp', column: 2, row: 9 },
-  { sprite: 'lamp', column: 11, row: 9 },
-  { sprite: 'stall', column: 6, row: 8 },
-  { sprite: 'barrel', column: 4, row: 8 },
-  { sprite: 'crate', column: 5, row: 8 },
-  { sprite: 'stone', column: 9, row: 8 },
-  { sprite: 'stone', column: 3, row: 5 },
-  { sprite: 'barrel', column: 10, row: 5 }
+  { sprite: 'lamp', column: 2, row: 7 },
+  { sprite: 'lamp', column: 13, row: 7 },
+  { sprite: 'barrel', column: 5, row: 9 },
+  { sprite: 'crate', column: 6, row: 10 },
+  { sprite: 'stone', column: 9, row: 9 },
+  { sprite: 'rock', column: 2, row: 4 },
+  { sprite: 'stone', column: 11, row: 10 },
+  { sprite: 'rock', column: 8, row: 3 },
+  { sprite: 'tuft-1', column: 1, row: 2 },
+  { sprite: 'tuft-2', column: 4, row: 10 },
+  { sprite: 'tuft-3', column: 9, row: 2 },
+  { sprite: 'tuft-1', column: 13, row: 3 },
+  { sprite: 'tuft-2', column: 6, row: 6 },
+  { sprite: 'tuft-3', column: 1, row: 10 }
 ]
 
 export const villageTheme: Theme = {
   id: 'village',
   name: 'Village Camp',
-  // The Fields sheet is a dirt-on-grass autotile set: almost every cell is
-  // cobblestone, and only index 37 is solid grass. Scattering the dirt tiles
-  // reads as noise, so the field is laid as solid grass (a dirt-path autotiler
-  // could come later).
+  // Index 37 is the only solid-grass tile; index 19 is solid dirt. The base is
+  // solid grass with texture added via scattered grass-tuft objects, and the
+  // authored path is painted with the dirt tile.
   ground: {
     sheet: { path: '/assets/themes/village/fields.png', frameSize: 32, margin: 0 },
-    tiles: [37]
+    tiles: [37],
+    pathTile: 19
   },
   sprites: Object.fromEntries(spriteList.map((entry) => [entry.key, entry])),
   characters: {
@@ -75,6 +115,7 @@ export const villageTheme: Theme = {
   characterColumns: 54,
   characterFrames: [0, 2 * 54 + 1, 5 * 54, 7 * 54 + 1, 9 * 54],
   agentStructures: ['house-1', 'tent-1', 'house-2', 'tent-2'],
+  path: buildPath(),
   scatter,
   backgroundColor: '#2f3a24'
 }

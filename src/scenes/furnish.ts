@@ -76,10 +76,16 @@ export function furnish(theme: Theme): Furnishing {
   const blocked = new Set<string>()
 
   const groundTiles = theme.ground.tiles
+  const pathCells = new Set(theme.path.map((cell) => `${cell.column},${cell.row}`))
 
-  // Varied ground across the whole scene.
+  // Base ground across the whole scene, with authored path cells painted dirt.
   for (let row = 0; row < officeRows; row += 1) {
     for (let column = 0; column < officeColumns; column += 1) {
+      if (pathCells.has(`${column},${row}`)) {
+        ground.push({ column, row, index: theme.ground.pathTile })
+        continue
+      }
+
       const pick = Math.floor(hashRandom(column, row) * groundTiles.length)
       const index = groundTiles[pick] ?? groundTiles[0] ?? 0
 

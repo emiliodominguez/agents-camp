@@ -17,12 +17,15 @@ export interface SheetSpec {
 
 /**
  * The tiled ground. Frames are picked at random from `tiles` so a large area
- * looks varied rather than a single repeated cell.
+ * looks varied rather than a single repeated cell. A separate `pathTile` paints
+ * the authored walkable path on top of the base.
  */
 export interface GroundSpec {
   sheet: SheetSpec
-  /** Frame indices that may be used as ground; chosen at random per cell. */
+  /** Frame indices that may be used as base ground; chosen at random per cell. */
   tiles: number[]
+  /** Frame index used to paint authored path cells. */
+  pathTile: number
 }
 
 /**
@@ -69,6 +72,8 @@ export interface Theme {
   characterFrames: number[]
   /** Sprite key each agent stands beside, in agent order (a home/tent). */
   agentStructures: string[]
+  /** Authored walkable-path cells, painted with `ground.pathTile`. */
+  path: Array<{ column: number; row: number }>
   /** Decorative objects scattered around the scene. */
   scatter: Placement[]
   /** Background colour shown outside the ground. */
