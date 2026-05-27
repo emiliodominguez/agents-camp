@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 
 import { Character } from '../objects/Character'
 import { setNearbyAgent } from '../overlay/state'
+import { activeTheme } from '../themes'
+import { furnish, type Furnishing } from './furnish'
 import {
   agents,
   interactionRadius,
@@ -16,11 +18,15 @@ import {
 /** Movement speed of the player avatar, in pixels per second. */
 const playerSpeed = 150
 
+/** Texture keys for the loaded sheets. */
+const tilesetKey = 'tileset'
+const charactersKey = 'characters'
+
 /**
- * The walkable office floor. Renders a tiled room, places agent characters at
- * their desks, and drives a player avatar with the keyboard. Proximity to an
- * agent is reported through the scene event emitter so the Solid overlay can
- * react without reaching into Phaser internals.
+ * The walkable office floor. Loads the theme's artwork, builds a furnished room
+ * from a tilemap, places animated character sprites at their workstations, and
+ * drives a player avatar with the keyboard. Walls and desks block movement, and
+ * proximity to an agent is pushed into the Solid overlay's reactive state.
  */
 export class OfficeScene extends Phaser.Scene {
   private player!: Character
@@ -28,6 +34,7 @@ export class OfficeScene extends Phaser.Scene {
   private keys: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key> | undefined
 
   private readonly characters = new Map<string, Character>()
+  private furnishing!: Furnishing
 
   /** The agent the player is currently close enough to interact with. */
   private nearbyAgentId: string | undefined
@@ -36,16 +43,53 @@ export class OfficeScene extends Phaser.Scene {
     super('office')
   }
 
+  preload(): void {
+    const tileset = activeTheme.tileset
+    const characters = activeTheme.characters
+
+    this.load.spritesheet(tilesetKey, tileset.path, {
+      frameWidth: tileset.frameSize,
+      frameHeight: tileset.frameSize,
+      margin: 0,
+      spacing: tileset.margin
+    })
+
+    this.load.spritesheet(charactersKey, characters.path, {
+      frameWidth: characters.frameSize,
+      frameHeight: characters.frameSize,
+      margin: 0,
+      spacing: characters.margin
+    })
+  }
+
   create(): void {
-    this.drawFloor()
-    this.drawDesks()
+    this.furnishing = furnish(activeTheme)
+
+    this.drawTiles(this.furnishing.floor)
+    this.drawTiles(this.furnishing.decor)
     this.spawnAgents()
     this.spawnPlayer()
     this.bindInput()
 
-    this.cameras.main.setBackgroundColor('#11141c')
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1)
+    this.cameras.main.setBackgroundColor(activeTheme.backgroundColor)
     this.cameras.main.setBounds(0, 0, officeColumns * tileSize, officeRows * tileSize)
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12)
+
+    this.applyZoom()
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyZoom, this)
+  }
+
+  /**
+   * Zoom the camera so the room comfortably fills the viewport. The room is
+   * smaller than most windows, so without this it renders 1:1 in a corner.
+   */
+  private applyZoom(): void {
+    const roomWidth = officeColumns * tileSize
+    const roomHeight = officeRows * tileSize
+
+    const zoom = Math.max(1, Math.min(this.scale.width / roomWidth, this.scale.height / roomHeight))
+
+    this.cameras.main.setZoom(zoom)
   }
 
   override update(_time: number, delta: number): void {
@@ -53,60 +97,78 @@ export class OfficeScene extends Phaser.Scene {
     this.updateProximity()
   }
 
-  /** Paint the checkerboard floor and a border wall. */
-  private drawFloor(): void {
-    const floor = this.add.graphics()
+  /**
+   * Draw a list of tile placements as scaled images, depth-sorted by row so
+   * lower tiles overlap higher ones naturally.
+   *
+   * @param placements - The tiles to draw.
+   */
+  private drawTiles(placements: Furnishing['floor']): void {
+    const scale = tileSize / activeTheme.tileset.frameSize
 
-    for (let row = 0; row < officeRows; row += 1) {
-      for (let column = 0; column < officeColumns; column += 1) {
-        const isAlternate = (row + column) % 2 === 0
+    for (const placement of placements) {
+      const image = this.add.image(
+        placement.column * tileSize,
+        placement.row * tileSize,
+        tilesetKey,
+        placement.index
+      )
 
-        floor.fillStyle(isAlternate ? 0x1b2030 : 0x1f2538, 1)
-        floor.fillRect(column * tileSize, row * tileSize, tileSize, tileSize)
-      }
-    }
-
-    floor.lineStyle(4, 0x2c3450, 1)
-    floor.strokeRect(0, 0, officeColumns * tileSize, officeRows * tileSize)
-  }
-
-  /** Draw simple desk rectangles in front of each agent's tile. */
-  private drawDesks(): void {
-    const desks = this.add.graphics()
-
-    desks.fillStyle(0x33405e, 1)
-
-    for (const agent of agents) {
-      const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
-
-      desks.fillRoundedRect(x - 18, y + 18, 36, 12, 3)
+      image.setOrigin(0, 0)
+      image.setScale(scale)
+      image.setDepth(placement.row)
     }
   }
 
   /** Instantiate a Character for every configured agent. */
   private spawnAgents(): void {
-    for (const agent of agents) {
-      this.characters.set(agent.id, this.createCharacter(agent))
-    }
+    activeTheme.characterFrames.forEach((frame, position) => {
+      const agent = agents[position]
+
+      if (agent === undefined) {
+        return
+      }
+
+      this.characters.set(agent.id, this.createCharacter(agent, frame))
+    })
   }
 
   /**
-   * Build one agent character at its desk tile.
+   * Build one agent character at its workstation chair tile.
    *
    * @param agent - The descriptor to render.
+   * @param frame - The character sheet frame to use.
    * @returns The created Character.
    */
-  private createCharacter(agent: AgentDescriptor): Character {
+  private createCharacter(agent: AgentDescriptor, frame: number): Character {
     const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
 
-    return new Character(this, x, y, agent.name, agent.color, agent.status)
+    const character = new Character(this, x, y, {
+      name: agent.name,
+      texture: charactersKey,
+      frame,
+      status: agent.status,
+      size: tileSize * 1.1
+    })
+
+    character.setDepth(agent.tile.row)
+
+    return character
   }
 
   /** Create the player avatar at the spawn tile. */
   private spawnPlayer(): void {
     const { x, y } = tileToPixel(playerSpawn.column, playerSpawn.row)
 
-    this.player = new Character(this, x, y, 'You', 0xffffff, 'idle')
+    this.player = new Character(this, x, y, {
+      name: 'You',
+      texture: charactersKey,
+      frame: activeTheme.characterFrames[0] ?? 0,
+      status: 'idle',
+      size: tileSize * 1.1
+    })
+
+    this.player.setDepth(playerSpawn.row)
   }
 
   /** Wire up arrow keys and WASD. */
@@ -122,7 +184,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   /**
-   * Move the avatar from the current key state, clamped to the room bounds.
+   * Move the avatar from the current key state, clamped to the room and stopped
+   * by blocked cells. Each axis is resolved separately so the player can slide
+   * along a wall instead of sticking to it.
    *
    * @param delta - Milliseconds since the previous frame.
    */
@@ -159,20 +223,39 @@ export class OfficeScene extends Phaser.Scene {
       return
     }
 
-    // Normalise so diagonal movement is not faster than cardinal movement.
     const length = Math.hypot(dx, dy)
 
-    const margin = tileSize / 2
-    const maxX = officeColumns * tileSize - margin
-    const maxY = officeRows * tileSize - margin
+    const nextX = this.player.x + (dx / length) * step
+    const nextY = this.player.y + (dy / length) * step
 
-    this.player.x = Phaser.Math.Clamp(this.player.x + (dx / length) * step, margin, maxX)
-    this.player.y = Phaser.Math.Clamp(this.player.y + (dy / length) * step, margin, maxY)
+    if (!this.isBlocked(nextX, this.player.y)) {
+      this.player.x = nextX
+    }
+
+    if (!this.isBlocked(this.player.x, nextY)) {
+      this.player.y = nextY
+    }
+
+    this.player.setDepth(Math.floor(this.player.y / tileSize) + 0.5)
+  }
+
+  /**
+   * Whether a pixel position falls inside a blocked tile cell.
+   *
+   * @param x - Pixel x to test.
+   * @param y - Pixel y to test.
+   * @returns True when the cell at that position cannot be entered.
+   */
+  private isBlocked(x: number, y: number): boolean {
+    const column = Math.floor(x / tileSize)
+    const row = Math.floor(y / tileSize)
+
+    return this.furnishing.blocked.has(`${column},${row}`)
   }
 
   /**
    * Find the closest agent within the interaction radius, highlight it, and
-   * emit a `proximity` event whenever the nearby agent changes.
+   * push the result into the overlay whenever the nearby agent changes.
    */
   private updateProximity(): void {
     let closestId: string | undefined

@@ -19,7 +19,7 @@ export function Overlay() {
         <ul>
           {agents.map((agent) => (
             <li>
-              <span class="dot" style={{ background: hexColor(agent.color) }} />
+              <span class="dot" style={{ background: agent.dotColor }} />
               {agent.name}
             </li>
           ))}
@@ -37,14 +37,4 @@ export function Overlay() {
       </Show>
     </>
   )
-}
-
-/**
- * Format a Phaser numeric colour as a CSS hex string.
- *
- * @param value - Colour as a 24-bit integer (for example 0x7c9cff).
- * @returns A `#rrggbb` string.
- */
-function hexColor(value: number): string {
-  return `#${value.toString(16).padStart(6, '0')}`
 }
