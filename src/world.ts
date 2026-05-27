@@ -8,9 +8,6 @@
 /** Lifecycle state of an agent, surfaced as a status bubble above its sprite. */
 export type AgentStatus = 'idle' | 'working' | 'talking'
 
-/** Which accent rug colour a workstation uses (keys the theme's rug palette). */
-export type RugKey = 'blue' | 'green' | 'orange'
-
 /** A single character in the office. */
 export interface AgentDescriptor {
   /** Stable identifier used to address the agent's session later. */
@@ -19,52 +16,34 @@ export interface AgentDescriptor {
   name: string
   /** Workstation position in tile coordinates (column, row) — the chair tile. */
   tile: { column: number; row: number }
-  /** Accent rug colour for this workstation. */
-  rug: RugKey
   /** Colour of the agent's dot in the roster overlay (CSS hex). */
   dotColor: string
   /** Current lifecycle state. */
   status: AgentStatus
 }
 
-/**
- * Rendered edge length of one tile, in pixels. The source art is 16px; we draw
- * at 2× so the pixel art reads clearly on modern displays.
- */
+/** Rendered edge length of one tile, in pixels (matches the 32px source art). */
 export const tileSize = 32
 
 /** Office floor size, measured in tiles (includes the perimeter wall). */
-export const officeColumns = 20
-export const officeRows = 14
+export const officeColumns = 14
+export const officeRows = 11
 
 /** The avatar the player drives around the room. */
-export const playerSpawn = { column: 10, row: 11 }
+export const playerSpawn = { column: 7, row: 8 }
 
 /**
  * The agents currently in the office. Hard-coded placeholders for now — the
  * names are evocative of the roles we expect real Claude Code agents to play.
- * Each sits at a workstation; `tile` is the chair the agent occupies, with the
- * desk one row above it.
+ * Workstations are grouped into two facing pods so the room reads as a real
+ * office rather than desks scattered in empty space. `tile` is the chair the
+ * agent occupies; the desk sits one row above.
  */
 export const agents: AgentDescriptor[] = [
-  { id: 'planner', name: 'Planner', tile: { column: 3, row: 4 }, rug: 'blue', dotColor: '#7c9cff', status: 'idle' },
-  { id: 'builder', name: 'Builder', tile: { column: 8, row: 4 }, rug: 'green', dotColor: '#6bd6a4', status: 'working' },
-  {
-    id: 'reviewer',
-    name: 'Reviewer',
-    tile: { column: 13, row: 4 },
-    rug: 'orange',
-    dotColor: '#f0a868',
-    status: 'idle'
-  },
-  {
-    id: 'explorer',
-    name: 'Explorer',
-    tile: { column: 16, row: 9 },
-    rug: 'blue',
-    dotColor: '#d58cf0',
-    status: 'talking'
-  }
+  { id: 'planner', name: 'Planner', tile: { column: 3, row: 3 }, dotColor: '#7c9cff', status: 'idle' },
+  { id: 'builder', name: 'Builder', tile: { column: 5, row: 3 }, dotColor: '#6bd6a4', status: 'working' },
+  { id: 'reviewer', name: 'Reviewer', tile: { column: 9, row: 3 }, dotColor: '#f0a868', status: 'idle' },
+  { id: 'explorer', name: 'Explorer', tile: { column: 11, row: 3 }, dotColor: '#d58cf0', status: 'talking' }
 ]
 
 /** Distance, in pixels, within which the player can interact with an agent. */

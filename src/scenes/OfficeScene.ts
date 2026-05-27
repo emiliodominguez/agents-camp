@@ -143,12 +143,14 @@ export class OfficeScene extends Phaser.Scene {
   private createCharacter(agent: AgentDescriptor, frame: number): Character {
     const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
 
-    const character = new Character(this, x, y, {
+    // Seat the agent tucked just under the desk rather than floating a full
+    // tile below it.
+    const character = new Character(this, x, y - tileSize * 0.35, {
       name: agent.name,
       texture: charactersKey,
       frame,
       status: agent.status,
-      size: tileSize * 1.1
+      size: tileSize * 0.95
     })
 
     character.setDepth(agent.tile.row)
@@ -165,7 +167,7 @@ export class OfficeScene extends Phaser.Scene {
       texture: charactersKey,
       frame: activeTheme.characterFrames[0] ?? 0,
       status: 'idle',
-      size: tileSize * 1.1
+      size: tileSize * 0.95
     })
 
     this.player.setDepth(playerSpawn.row)

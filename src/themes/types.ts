@@ -16,12 +16,15 @@ export interface SheetSpec {
 }
 
 /**
- * A workstation: a single desk tile with a monitor tile sitting on it. Both are
- * placed one row above the agent's chair (the agent sprite sits at the chair).
+ * A workstation: a desk tile with a monitor on it, plus a pool of small desk
+ * props (mug, pen cup, papers…) to scatter so no two desks look identical.
+ * Everything sits one row above the agent's chair.
  */
 export interface WorkstationRole {
   desk: number
   monitor: number
+  /** Small props placed on the desk; one is chosen per workstation. */
+  deskProps: number[]
 }
 
 /** Named tile roles used to furnish the room. Each value is a tile index. */
@@ -30,6 +33,8 @@ export interface TileRoles {
   floor: number
   /** Perimeter wall tile. */
   wall: number
+  /** Door tile placed in the top wall. */
+  door: number
   /** The workstation tiles. */
   workstation: WorkstationRole
   /** Decorative props placed against the top wall. */

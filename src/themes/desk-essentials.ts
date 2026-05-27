@@ -42,7 +42,8 @@ export const deskEssentialsTheme: Theme = {
   tiles: {
     floor: 15,
     wall: 7,
-    workstation: { desk: 0, monitor: 12 },
+    door: 8,
+    workstation: { desk: 0, monitor: 12, deskProps: [4, 9, 1, 2] },
     decor: [14, 5, 13]
   },
   backgroundColor: '#1a1410'
