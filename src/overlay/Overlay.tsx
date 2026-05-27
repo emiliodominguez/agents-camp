@@ -1,5 +1,6 @@
 import { Show } from 'solid-js'
 
+import { activeTheme } from '../themes'
 import { agents } from '../world'
 import { nearbyAgent } from './state'
 
@@ -14,7 +15,7 @@ export function Overlay() {
   return (
     <>
       <div class="panel roster">
-        <h1>Office</h1>
+        <h1>{activeTheme.name}</h1>
 
         <ul>
           {agents.map((agent) => (

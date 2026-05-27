@@ -3,7 +3,7 @@ import { render } from 'solid-js/web'
 
 import './styles.css'
 
-import { OfficeScene } from './scenes/OfficeScene'
+import { VillageScene } from './scenes/VillageScene'
 import { Overlay } from './overlay/Overlay'
 
 const game = new Phaser.Game({
@@ -17,7 +17,7 @@ const game = new Phaser.Game({
     width: '100%',
     height: '100%'
   },
-  scene: OfficeScene
+  scene: VillageScene
 })
 
 // Exposed for browser-based verification during development.

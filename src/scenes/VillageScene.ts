@@ -19,16 +19,16 @@ import {
 const playerSpeed = 150
 
 /** Texture keys for the loaded sheets. */
-const tilesetKey = 'tileset'
+const groundKey = 'ground'
 const charactersKey = 'characters'
 
 /**
- * The walkable office floor. Loads the theme's artwork, builds a furnished room
- * from a tilemap, places animated character sprites at their workstations, and
- * drives a player avatar with the keyboard. Walls and desks block movement, and
- * proximity to an agent is pushed into the Solid overlay's reactive state.
+ * The walkable scene. Loads the theme's ground tiles, object sprites, and
+ * characters; tiles the ground; places each agent's home and the scattered
+ * decor; and drives a player avatar with the keyboard. Object footprints block
+ * movement, and proximity to an agent is pushed into the Solid overlay.
  */
-export class OfficeScene extends Phaser.Scene {
+export class VillageScene extends Phaser.Scene {
   private player!: Character
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined
   private keys: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key> | undefined
@@ -40,18 +40,18 @@ export class OfficeScene extends Phaser.Scene {
   private nearbyAgentId: string | undefined
 
   constructor() {
-    super('office')
+    super('village')
   }
 
   preload(): void {
-    const tileset = activeTheme.tileset
+    const ground = activeTheme.ground.sheet
     const characters = activeTheme.characters
 
-    this.load.spritesheet(tilesetKey, tileset.path, {
-      frameWidth: tileset.frameSize,
-      frameHeight: tileset.frameSize,
+    this.load.spritesheet(groundKey, ground.path, {
+      frameWidth: ground.frameSize,
+      frameHeight: ground.frameSize,
       margin: 0,
-      spacing: tileset.margin
+      spacing: ground.margin
     })
 
     this.load.spritesheet(charactersKey, characters.path, {
@@ -60,13 +60,18 @@ export class OfficeScene extends Phaser.Scene {
       margin: 0,
       spacing: characters.margin
     })
+
+    // Each object sprite is its own native-size image.
+    for (const sprite of Object.values(activeTheme.sprites)) {
+      this.load.image(sprite.key, sprite.path)
+    }
   }
 
   create(): void {
     this.furnishing = furnish(activeTheme)
 
-    this.drawTiles(this.furnishing.floor)
-    this.drawTiles(this.furnishing.decor)
+    this.drawGround()
+    this.drawObjects()
     this.spawnAgents()
     this.spawnPlayer()
     this.bindInput()
@@ -80,14 +85,14 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   /**
-   * Zoom the camera so the room comfortably fills the viewport. The room is
+   * Zoom the camera so the scene comfortably fills the viewport. The scene is
    * smaller than most windows, so without this it renders 1:1 in a corner.
    */
   private applyZoom(): void {
-    const roomWidth = officeColumns * tileSize
-    const roomHeight = officeRows * tileSize
+    const sceneWidth = officeColumns * tileSize
+    const sceneHeight = officeRows * tileSize
 
-    const zoom = Math.max(1, Math.min(this.scale.width / roomWidth, this.scale.height / roomHeight))
+    const zoom = Math.max(1, Math.min(this.scale.width / sceneWidth, this.scale.height / sceneHeight))
 
     this.cameras.main.setZoom(zoom)
   }
@@ -97,25 +102,31 @@ export class OfficeScene extends Phaser.Scene {
     this.updateProximity()
   }
 
-  /**
-   * Draw a list of tile placements as scaled images, depth-sorted by row so
-   * lower tiles overlap higher ones naturally.
-   *
-   * @param placements - The tiles to draw.
-   */
-  private drawTiles(placements: Furnishing['floor']): void {
-    const scale = tileSize / activeTheme.tileset.frameSize
+  /** Tile the ground from the theme's frame pool. */
+  private drawGround(): void {
+    const scale = tileSize / activeTheme.ground.sheet.frameSize
 
-    for (const placement of placements) {
-      const image = this.add.image(
-        placement.column * tileSize,
-        placement.row * tileSize,
-        tilesetKey,
-        placement.index
-      )
+    for (const cell of this.furnishing.ground) {
+      const image = this.add.image(cell.column * tileSize, cell.row * tileSize, groundKey, cell.index)
 
       image.setOrigin(0, 0)
       image.setScale(scale)
+      image.setDepth(-1000)
+    }
+  }
+
+  /**
+   * Draw each placed object at native size, anchored by its bottom centre so
+   * tall objects sit on the ground. Depth follows the anchor row so nearer
+   * objects overlap farther ones.
+   */
+  private drawObjects(): void {
+    for (const placement of this.furnishing.objects) {
+      const { x, y } = tileToPixel(placement.column, placement.row)
+
+      const image = this.add.image(x, y + tileSize / 2, placement.sprite)
+
+      image.setOrigin(0.5, 1)
       image.setDepth(placement.row)
     }
   }
@@ -134,7 +145,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   /**
-   * Build one agent character at its workstation chair tile.
+   * Build one agent character where the agent stands.
    *
    * @param agent - The descriptor to render.
    * @param frame - The character sheet frame to use.
@@ -143,17 +154,15 @@ export class OfficeScene extends Phaser.Scene {
   private createCharacter(agent: AgentDescriptor, frame: number): Character {
     const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
 
-    // Seat the agent tucked just under the desk rather than floating a full
-    // tile below it.
-    const character = new Character(this, x, y - tileSize * 0.35, {
+    const character = new Character(this, x, y, {
       name: agent.name,
       texture: charactersKey,
       frame,
       status: agent.status,
-      size: tileSize * 0.95
+      size: tileSize * 1.1
     })
 
-    character.setDepth(agent.tile.row)
+    character.setDepth(agent.tile.row + 0.5)
 
     return character
   }
@@ -167,10 +176,10 @@ export class OfficeScene extends Phaser.Scene {
       texture: charactersKey,
       frame: activeTheme.characterFrames[0] ?? 0,
       status: 'idle',
-      size: tileSize * 0.95
+      size: tileSize * 1.1
     })
 
-    this.player.setDepth(playerSpawn.row)
+    this.player.setDepth(playerSpawn.row + 0.5)
   }
 
   /** Wire up arrow keys and WASD. */
@@ -186,9 +195,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   /**
-   * Move the avatar from the current key state, clamped to the room and stopped
-   * by blocked cells. Each axis is resolved separately so the player can slide
-   * along a wall instead of sticking to it.
+   * Move the avatar from the current key state, clamped to the scene and
+   * stopped by blocked cells. Each axis is resolved separately so the player
+   * can slide along an obstacle instead of sticking to it.
    *
    * @param delta - Milliseconds since the previous frame.
    */
@@ -230,12 +239,17 @@ export class OfficeScene extends Phaser.Scene {
     const nextX = this.player.x + (dx / length) * step
     const nextY = this.player.y + (dy / length) * step
 
-    if (!this.isBlocked(nextX, this.player.y)) {
-      this.player.x = nextX
+    const margin = tileSize / 2
+
+    const clampedX = Phaser.Math.Clamp(nextX, margin, officeColumns * tileSize - margin)
+    const clampedY = Phaser.Math.Clamp(nextY, margin, officeRows * tileSize - margin)
+
+    if (!this.isBlocked(clampedX, this.player.y)) {
+      this.player.x = clampedX
     }
 
-    if (!this.isBlocked(this.player.x, nextY)) {
-      this.player.y = nextY
+    if (!this.isBlocked(this.player.x, clampedY)) {
+      this.player.y = clampedY
     }
 
     this.player.setDepth(Math.floor(this.player.y / tileSize) + 0.5)

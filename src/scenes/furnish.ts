@@ -1,115 +1,114 @@
 import { agents, officeColumns, officeRows } from '../world'
-import type { Theme } from '../themes'
+import type { Placement, Theme } from '../themes'
 
-/** A single tile placement: which tile index goes at which grid cell. */
-export interface Placement {
+/** A ground tile placed at a cell. */
+export interface GroundPlacement {
   column: number
   row: number
   index: number
 }
 
-/** The furnished room expressed as tile layers plus the cells that block movement. */
+/** The dressed scene: ground tiles, free-placed object sprites, and blocked cells. */
 export interface Furnishing {
-  /** Floor fill under everything. */
-  floor: Placement[]
-  /** Walls and furniture drawn above the floor, in draw order. */
-  decor: Placement[]
+  /** Ground fill under everything. */
+  ground: GroundPlacement[]
+  /** Object sprites (homes, decor) in draw order. */
+  objects: Placement[]
   /** Grid cells the player cannot walk through (`"column,row"`). */
   blocked: Set<string>
 }
 
 /**
- * Compose the office from a theme: a floor fill, a perimeter wall with a door,
- * one fully-dressed workstation per agent (desk + monitor + a small prop above
- * the agent's chair), and decor scattered along the walls so the room reads as
- * a real, populated office rather than desks floating in empty space. Walls,
- * desks, and wall props are impassable.
+ * Deterministic pseudo-random in [0, 1) from two integers, so the ground looks
+ * varied but renders identically every load.
  *
- * @param theme - The active theme supplying tile indices.
- * @returns Tile placements split into floor and decor layers, plus blocked cells.
+ * @param a - First seed component.
+ * @param b - Second seed component.
+ * @returns A stable value in [0, 1).
+ */
+function hashRandom(a: number, b: number): number {
+  const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
+
+  return n - Math.floor(n)
+}
+
+/**
+ * Mark the footprint of an object as blocked. The footprint is centred
+ * horizontally on the anchor column and rises from the anchor row.
+ *
+ * @param theme - The active theme (for sprite footprints).
+ * @param placement - The object placement.
+ * @param blocked - The set to add blocked cells to.
+ */
+function blockFootprint(theme: Theme, placement: Placement, blocked: Set<string>): void {
+  const spec = theme.sprites[placement.sprite]
+
+  if (spec === undefined) {
+    return
+  }
+
+  const { width, height } = spec.footprint
+
+  if (width === 0 || height === 0) {
+    return
+  }
+
+  const startColumn = placement.column - Math.floor((width - 1) / 2)
+
+  for (let dy = 0; dy < height; dy += 1) {
+    for (let dx = 0; dx < width; dx += 1) {
+      blocked.add(`${startColumn + dx},${placement.row - dy}`)
+    }
+  }
+}
+
+/**
+ * Compose the scene from a theme: a varied ground fill, each agent's home (a
+ * house or tent) placed just above where the agent stands, and the theme's
+ * scattered decor. Object footprints block movement.
+ *
+ * @param theme - The active theme supplying ground tiles and object sprites.
+ * @returns Ground and object placements, plus blocked cells.
  */
 export function furnish(theme: Theme): Furnishing {
-  const floor: Placement[] = []
-  const decor: Placement[] = []
+  const ground: GroundPlacement[] = []
+  const objects: Placement[] = []
   const blocked = new Set<string>()
 
-  const block = (column: number, row: number): void => {
-    blocked.add(`${column},${row}`)
-  }
+  const groundTiles = theme.ground.tiles
 
-  const { floor: floorTile, wall, door, workstation, decor: decorTiles } = theme.tiles
-
-  // Floor across the whole room.
+  // Varied ground across the whole scene.
   for (let row = 0; row < officeRows; row += 1) {
     for (let column = 0; column < officeColumns; column += 1) {
-      floor.push({ column, row, index: floorTile })
+      const pick = Math.floor(hashRandom(column, row) * groundTiles.length)
+      const index = groundTiles[pick] ?? groundTiles[0] ?? 0
+
+      ground.push({ column, row, index })
     }
   }
 
-  // Perimeter wall, with a door centred in the top edge. The door cell stays
-  // walkable (it's the way in/out).
-  const doorColumn = Math.floor(officeColumns / 2)
+  // Each agent's home sits one row above where the agent stands.
+  agents.forEach((agent, position) => {
+    const structure = theme.agentStructures[position]
 
-  for (let row = 0; row < officeRows; row += 1) {
-    for (let column = 0; column < officeColumns; column += 1) {
-      const onEdge = row === 0 || column === 0 || row === officeRows - 1 || column === officeColumns - 1
-
-      if (!onEdge) {
-        continue
-      }
-
-      if (row === 0 && column === doorColumn) {
-        decor.push({ column, row, index: door })
-        continue
-      }
-
-      decor.push({ column, row, index: wall })
-      block(column, row)
-    }
-  }
-
-  // Wall-hugging decor along the back wall, skipping the door.
-  decorTiles.forEach((index, position) => {
-    const column = 2 + position * 4
-
-    if (column === doorColumn) {
+    if (structure === undefined) {
       return
     }
 
-    decor.push({ column, row: 1, index })
-    block(column, 1)
+    const placement: Placement = { sprite: structure, column: agent.tile.column, row: agent.tile.row - 1 }
+
+    objects.push(placement)
+    blockFootprint(theme, placement, blocked)
   })
 
-  // Potted-plant-style props in the lower corners to anchor the empty floor.
-  const cornerProps = workstation.deskProps
-
-  const corners: Array<[number, number, number]> = [
-    [2, officeRows - 2, cornerProps[0] ?? wall],
-    [officeColumns - 3, officeRows - 2, cornerProps[1] ?? wall]
-  ]
-
-  for (const [column, row, index] of corners) {
-    decor.push({ column, row, index })
-    block(column, row)
+  // Scattered decor.
+  for (const placement of theme.scatter) {
+    objects.push(placement)
+    blockFootprint(theme, placement, blocked)
   }
 
-  // One fully-dressed workstation per agent. `tile` is the chair the agent sits
-  // at; the desk, monitor, and a rotating small prop sit one row above.
-  agents.forEach((agent, position) => {
-    const { column, row } = agent.tile
-    const deskRow = row - 1
+  // Draw objects back-to-front so nearer ones overlap farther ones.
+  objects.sort((a, b) => a.row - b.row)
 
-    decor.push({ column, row: deskRow, index: workstation.desk })
-    decor.push({ column, row: deskRow, index: workstation.monitor })
-
-    const prop = workstation.deskProps[position % workstation.deskProps.length]
-
-    if (prop !== undefined) {
-      decor.push({ column, row: deskRow, index: prop })
-    }
-
-    block(column, deskRow)
-  })
-
-  return { floor, decor, blocked }
+  return { ground, objects, blocked }
 }
