@@ -68,7 +68,15 @@ const spriteList: ObjectSprite[] = [
   sprite('tuft-3', 'grass/6', 0, 0),
   sprite('tuft-4', 'grass/1', 0, 0),
   sprite('tuft-5', 'grass/3', 0, 0),
-  sprite('tuft-6', 'grass/5', 0, 0)
+  sprite('tuft-6', 'grass/5', 0, 0),
+  // Trees and vegetation (generated; warm palette). Trees and pines block at
+  // their trunk; bushes block lightly; flowers are decoration.
+  sprite('tree-1', 'foliage/tree-1', 1, 1),
+  sprite('tree-2', 'foliage/tree-2', 1, 1),
+  sprite('pine-1', 'foliage/pine-1', 1, 1),
+  sprite('bush-1', 'foliage/bush-1', 1, 1),
+  sprite('bush-2', 'foliage/bush-2', 1, 1),
+  sprite('flowers-1', 'foliage/flowers-1', 0, 0)
 ]
 
 /**
@@ -336,20 +344,35 @@ function buildScatter(): Placement[] {
   add('crate-2', 20, 16)
   add('bench', 19, 16)
 
-  // Deterministically scatter rocks and grass over the open field, skipping the
-  // roads so the player always has clear ground to walk.
+  // Deterministically scatter grass, flowers, bushes, the odd rock, and the
+  // occasional tree over the open field, skipping the roads so the player
+  // always has clear ground to walk. Vegetation is weighted toward warm,
+  // living things (tufts, flowers, bushes) over bare rock.
   const nature: Array<{ sprite: string; weight: number }> = [
-    { sprite: 'tuft-1', weight: 1 },
-    { sprite: 'tuft-2', weight: 1 },
-    { sprite: 'tuft-3', weight: 1 },
-    { sprite: 'tuft-4', weight: 1 },
-    { sprite: 'tuft-5', weight: 1 },
-    { sprite: 'tuft-6', weight: 1 },
+    { sprite: 'tuft-1', weight: 3 },
+    { sprite: 'tuft-2', weight: 3 },
+    { sprite: 'tuft-3', weight: 3 },
+    { sprite: 'tuft-4', weight: 3 },
+    { sprite: 'tuft-5', weight: 3 },
+    { sprite: 'tuft-6', weight: 3 },
+    { sprite: 'flowers-1', weight: 3 },
+    { sprite: 'bush-1', weight: 2 },
+    { sprite: 'bush-2', weight: 2 },
+    { sprite: 'tree-1', weight: 1 },
+    { sprite: 'tree-2', weight: 1 },
+    { sprite: 'pine-1', weight: 1 },
     { sprite: 'pebble-1', weight: 1 },
-    { sprite: 'pebble-2', weight: 1 },
-    { sprite: 'rock', weight: 1 },
-    { sprite: 'rock-big', weight: 1 }
+    { sprite: 'rock', weight: 1 }
   ]
+
+  // Expand weights into a flat pool for simple weighted picking.
+  const pool: string[] = []
+
+  for (const { sprite: key, weight } of nature) {
+    for (let count = 0; count < weight; count += 1) {
+      pool.push(key)
+    }
+  }
 
   let seed = 100
 
@@ -363,43 +386,42 @@ function buildScatter(): Placement[] {
 
       const roll = rand(seed)
 
-      // Roughly a quarter of off-road cells get a natural decoration.
-      if (roll > 0.26) {
+      // Roughly a third of off-road cells get a natural decoration.
+      if (roll > 0.32) {
         continue
       }
 
-      const pick = Math.floor(rand(seed * 3.1) * nature.length)
-      const choice = nature[pick] ?? nature[0]
+      const choice = pool[Math.floor(rand(seed * 3.1) * pool.length)]
 
       if (choice !== undefined) {
-        add(choice.sprite, column, row)
+        add(choice, column, row)
       }
     }
   }
 
-  // A natural rock border around the world edge so the camp has a defined
-  // boundary instead of bleeding into open space. Road mouths stay clear
-  // because `add` skips path cells. The boulders thin out one tile in.
-  const boulders = ['rock-big', 'rock', 'rock-big']
+  // A warm treeline rings the world so the camp nestles in a clearing instead
+  // of bleeding into open space. Road mouths stay clear because `add` skips
+  // path cells. Trees alternate with pines and thin one tile inward.
+  const treeline = ['tree-1', 'pine-1', 'tree-2', 'tree-1', 'pine-1']
 
   for (let column = 0; column <= maxColumn; column += 1) {
-    add(boulders[column % boulders.length] ?? 'rock-big', column, 0)
-    add(boulders[(column + 1) % boulders.length] ?? 'rock-big', column, maxRow)
+    add(treeline[column % treeline.length] ?? 'tree-1', column, 0)
+    add(treeline[(column + 2) % treeline.length] ?? 'tree-1', column, maxRow)
 
-    // A sparser second row so the edge reads as a band, not a wall.
-    if (column % 2 === 0) {
-      add('rock', column, 1)
-      add('rock', column, maxRow - 1)
+    // A sparser inner row so the treeline reads as a grove, not a fence.
+    if (column % 3 === 0) {
+      add('bush-1', column, 1)
+      add('bush-2', column, maxRow - 1)
     }
   }
 
   for (let row = 1; row < maxRow; row += 1) {
-    add(boulders[row % boulders.length] ?? 'rock-big', 0, row)
-    add(boulders[(row + 1) % boulders.length] ?? 'rock-big', maxColumn, row)
+    add(treeline[row % treeline.length] ?? 'tree-1', 0, row)
+    add(treeline[(row + 2) % treeline.length] ?? 'tree-1', maxColumn, row)
 
-    if (row % 2 === 0) {
-      add('rock', 1, row)
-      add('rock', maxColumn - 1, row)
+    if (row % 3 === 0) {
+      add('bush-2', 1, row)
+      add('bush-1', maxColumn - 1, row)
     }
   }
 
@@ -442,7 +464,7 @@ export const villageTheme: Theme = {
   agentStructures: ['house-1', 'tent-1', 'house-2', 'tent-2'],
   path: pathCells,
   scatter: buildScatter(),
-  // A grass-matching green so the world edges blend into the background rather
-  // than revealing dark void when the camera reaches a boundary.
-  backgroundColor: '#7da455'
+  // A warm, grass-matching green so the world edges blend into the background
+  // rather than revealing dark void when the camera reaches a boundary.
+  backgroundColor: '#8aab5a'
 }
