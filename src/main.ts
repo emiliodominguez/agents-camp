@@ -3,6 +3,8 @@ import { render } from 'solid-js/web'
 
 import './styles.css'
 
+import { onAgentHello, onAgentReply, onAgentToken, startAgentClient } from './services/agentClient'
+import { appendAgentToken, commitAgentReply, setLiveMode } from './overlay/state'
 import { VillageScene } from './scenes/VillageScene'
 import { Overlay } from './overlay/Overlay'
 
@@ -30,3 +32,9 @@ const overlayRoot = document.getElementById('overlay')
 if (overlayRoot !== null) {
   render(Overlay, overlayRoot)
 }
+
+// Connect to the agent backend and route its stream into the overlay state.
+onAgentHello((live) => setLiveMode(live))
+onAgentToken((agentId, text) => appendAgentToken(agentId, text))
+onAgentReply((agentId, text) => commitAgentReply(agentId, text))
+startAgentClient()

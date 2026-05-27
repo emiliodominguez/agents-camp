@@ -1,7 +1,8 @@
 import Phaser from 'phaser'
 
 import { Character } from '../objects/Character'
-import { setNearbyAgent } from '../overlay/state'
+import { onAgentStatus } from '../services/agentClient'
+import { chatAgent, openChat, setNearbyAgent } from '../overlay/state'
 import { activeTheme } from '../themes'
 import { furnish, type Furnishing } from './furnish'
 import {
@@ -41,6 +42,8 @@ export class VillageScene extends Phaser.Scene {
   private player!: Character
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined
   private keys: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key> | undefined
+  private talkKey: Phaser.Input.Keyboard.Key | undefined
+  private unsubscribeStatus: (() => void) | undefined
 
   private readonly characters = new Map<string, Character>()
   private furnishing!: Furnishing
@@ -92,6 +95,15 @@ export class VillageScene extends Phaser.Scene {
 
     this.applyZoom()
     this.scale.on(Phaser.Scale.Events.RESIZE, this.applyZoom, this)
+
+    // Reflect each agent's live backend status on its bubble.
+    this.unsubscribeStatus = onAgentStatus((agentId, status) => {
+      this.characters.get(agentId)?.setStatus(status)
+    })
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.unsubscribeStatus?.()
+    })
   }
 
   /**
@@ -113,8 +125,37 @@ export class VillageScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    this.handleTalkKey()
+
+    // Freeze movement and proximity changes while a chat is open so typing
+    // doesn't also drive the avatar.
+    if (chatAgent() !== undefined) {
+      return
+    }
+
     this.movePlayer(delta)
     this.updateProximity()
+  }
+
+  /**
+   * Open the nearby agent's chat when E is pressed, or close the open chat when
+   * Escape is pressed.
+   */
+  private handleTalkKey(): void {
+    if (this.talkKey === undefined || !Phaser.Input.Keyboard.JustDown(this.talkKey)) {
+      return
+    }
+
+    // Ignore E while typing in the chat input — let the keystroke land there.
+    const active = document.activeElement
+
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      return
+    }
+
+    if (this.nearbyAgentId !== undefined) {
+      openChat(this.nearbyAgentId)
+    }
   }
 
   /** Tile the ground from the theme's frame pool. */
@@ -230,6 +271,10 @@ export class VillageScene extends Phaser.Scene {
 
     this.cursors = keyboard.createCursorKeys()
     this.keys = keyboard.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>
+    this.talkKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E)
+
+    // Let keystrokes reach the chat input instead of being swallowed for the game.
+    keyboard.disableGlobalCapture()
   }
 
   /**

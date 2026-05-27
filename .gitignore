@@ -3,6 +3,9 @@ dist
 *.local
 .DS_Store
 
+# Secrets — the agent backend reads ANTHROPIC_API_KEY from here
+.env
+
 # Raw asset downloads (only the extracted sheets in public/ are committed)
 .assets-download
 
