@@ -11,7 +11,7 @@ try {
 
 import { personaById, personas } from '../shared/agents'
 import type { ClientMessage, ServerMessage } from '../shared/protocol'
-import { createSession, isLive, type AgentSession } from './agentSession'
+import { authMode, createSession, isLive, type AgentSession } from './agentSession'
 
 const port = Number(process.env.AGENT_PORT ?? 8787)
 
@@ -113,7 +113,12 @@ webSocketServer.on('connection', (socket) => {
 })
 
 httpServer.listen(port, () => {
-  const mode = isLive() ? 'live (Claude Agent SDK)' : 'mock (no ANTHROPIC_API_KEY)'
+  const description: Record<ReturnType<typeof authMode>, string> = {
+    'subscription-token': 'live — Claude subscription token',
+    'api-key': 'live — Anthropic API key',
+    'local-login': 'live — local Claude Code login (your subscription)',
+    mock: 'mock — no credentials (run `claude login` or set CLAUDE_CODE_OAUTH_TOKEN)'
+  }
   // eslint-disable-next-line no-console
-  console.log(`agent backend listening on ws://localhost:${port}/agents — ${mode}`)
+  console.log(`agent backend listening on ws://localhost:${port}/agents — ${description[authMode()]}`)
 })

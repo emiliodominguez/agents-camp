@@ -38,10 +38,10 @@ press **E** to open a chat. Messages stream back token by token, and the status
 bubble over the sprite reflects the agent's live state: ⚙️ working → 💬 talking
 → 💤 idle.
 
-- **With an API key:** real Claude replies. The agents are conversational only
-  (no tools) in this pass.
-- **Without a key:** the backend serves persona-flavoured mock replies, so the
-  whole pipeline — WebSocket, streaming, status — works end to end.
+- **Live:** real Claude replies (conversational only, no tools in this pass).
+- **Mock:** with no credentials, the backend serves persona-flavoured mock
+  replies, so the whole pipeline — WebSocket, streaming, status — works end to
+  end.
 
 ## Run
 
@@ -54,9 +54,17 @@ pnpm dev   # web on http://localhost:5180, agent backend on ws://localhost:8787
 `/agents` to it). Walk with **WASD** or the arrow keys; press **E** next to an
 agent to talk.
 
-To run on real Claude, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`
-(the SDK uses an API key, not your Claude Code login). The roster panel shows
-whether agents are "live (Claude)" or "mock replies".
+The agents run on real Claude automatically if you're logged in with the Claude
+Code CLI (`claude login`) — the SDK reuses that session, no API key needed, and
+usage draws from your Claude subscription. The roster panel shows whether agents
+are "live (Claude)" or "mock replies".
+
+Other auth options, in precedence order (see `.env.example`):
+
+1. `CLAUDE_CODE_OAUTH_TOKEN` — a subscription token from `claude setup-token`
+   (best for deploys without an interactive login).
+2. `ANTHROPIC_API_KEY` — a standalone metered API key.
+3. Local `claude login` session — zero config on your own machine.
 
 Other scripts: `pnpm dev:web` (web only), `pnpm dev:server` (backend only),
 `pnpm build`.

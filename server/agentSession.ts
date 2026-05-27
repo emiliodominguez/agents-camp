@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 import type { AgentPersona } from '../shared/agents'
@@ -267,13 +271,53 @@ function createMockSession(persona: AgentPersona, handlers: SessionHandlers): Ag
 }
 
 /**
- * Whether a real Claude API key is configured. Read lazily (not at module load)
- * so the server can load a `.env` file before the first check.
+ * Path to the local Claude Code login credentials, honouring `CLAUDE_CONFIG_DIR`.
  *
- * @returns True when `ANTHROPIC_API_KEY` is set.
+ * @returns The credentials file path.
+ */
+function localCredentialsPath(): string {
+  const base = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+
+  return join(base, '.credentials.json')
+}
+
+/**
+ * How the backend will reach Claude. Read lazily (not at module load) so the
+ * server can load a `.env` file first. Three live paths, in precedence order:
+ *
+ * - `subscription-token`: a `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`
+ *   (runs on your Claude plan, no metered key) — best for deploys.
+ * - `api-key`: a standalone `ANTHROPIC_API_KEY` (metered).
+ * - `local-login`: the SDK silently reuses your local `claude login` session
+ *   (`~/.claude/.credentials.json`) — zero config on your own machine.
+ *
+ * Otherwise `mock`.
+ *
+ * @returns The active auth mode.
+ */
+export function authMode(): 'subscription-token' | 'api-key' | 'local-login' | 'mock' {
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+    return 'subscription-token'
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    return 'api-key'
+  }
+
+  if (existsSync(localCredentialsPath())) {
+    return 'local-login'
+  }
+
+  return 'mock'
+}
+
+/**
+ * Whether real Claude credentials are available (any non-mock auth mode).
+ *
+ * @returns True when the backend can reach real Claude.
  */
 export function isLive(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY)
+  return authMode() !== 'mock'
 }
 
 /**
