@@ -1,4 +1,4 @@
-import { agents, officeColumns, officeRows, type RugKey } from '../world'
+import { agents, officeColumns, officeRows } from '../world'
 import type { Theme } from '../themes'
 
 /** A single tile placement: which tile index goes at which grid cell. */
@@ -12,16 +12,17 @@ export interface Placement {
 export interface Furnishing {
   /** Floor fill under everything. */
   floor: Placement[]
-  /** Walls and furniture drawn above the floor. */
+  /** Walls and furniture drawn above the floor, in draw order. */
   decor: Placement[]
   /** Grid cells the player cannot walk through (`"column,row"`). */
   blocked: Set<string>
 }
 
 /**
- * Compose the office from a theme: a floor fill, a perimeter wall, and one
- * workstation (rug + desk + computer + chair) per agent, with a few plants in
- * the corners. Walls and desks are marked impassable.
+ * Compose the office from a theme: a checkerboard floor, a perimeter wall (a
+ * two-row band along the top, single tiles elsewhere), one workstation per
+ * agent (desk surface + legs + monitor above the agent's chair), and a few
+ * decor props along the back wall. Walls and desks are impassable.
  *
  * @param theme - The active theme supplying tile indices.
  * @returns Tile placements split into floor and decor layers, plus blocked cells.
@@ -35,51 +36,56 @@ export function furnish(theme: Theme): Furnishing {
     blocked.add(`${column},${row}`)
   }
 
-  // Floor everywhere, then a wall ring around the perimeter.
+  const { floor: floorTiles, wall, workstation, decor: decorTiles } = theme.tiles
+
+  // Checkerboard floor across the whole room.
   for (let row = 0; row < officeRows; row += 1) {
     for (let column = 0; column < officeColumns; column += 1) {
-      floor.push({ column, row, index: theme.tiles.floor })
+      const checker = (row + column) % 2 === 0 ? floorTiles.light : floorTiles.dark
 
-      const onEdge = row === 0 || column === 0 || row === officeRows - 1 || column === officeColumns - 1
-
-      if (onEdge) {
-        decor.push({ column, row, index: theme.tiles.wall })
-        block(column, row)
-      }
+      floor.push({ column, row, index: checker })
     }
   }
 
-  const rugIndex: Record<RugKey, number> = {
-    blue: theme.rugs.blue,
-    green: theme.rugs.green,
-    orange: theme.rugs.orange
+  // Perimeter wall. The top edge is a two-row band (body then baseboard); the
+  // left, right, and bottom edges are a single body tile.
+  for (let column = 0; column < officeColumns; column += 1) {
+    decor.push({ column, row: 0, index: wall.body })
+    decor.push({ column, row: 1, index: wall.base })
+
+    decor.push({ column, row: officeRows - 1, index: wall.body })
+
+    block(column, 0)
+    block(column, 1)
+    block(column, officeRows - 1)
   }
 
-  // One workstation per agent. `tile` is the chair; the desk sits one row up.
+  for (let row = 2; row < officeRows - 1; row += 1) {
+    decor.push({ column: 0, row, index: wall.body })
+    decor.push({ column: officeColumns - 1, row, index: wall.body })
+
+    block(0, row)
+    block(officeColumns - 1, row)
+  }
+
+  // Decor props sitting just below the back wall.
+  decorTiles.forEach((index, position) => {
+    const column = 3 + position * 5
+
+    decor.push({ column, row: 2, index })
+  })
+
+  // One workstation per agent. `tile` is the chair the agent sits at; above it
+  // sit the desk legs, then the desk surface with a monitor resting on it.
   for (const agent of agents) {
     const { column, row } = agent.tile
 
-    floor.push({ column, row: row - 1, index: rugIndex[agent.rug] })
+    decor.push({ column, row: row - 1, index: workstation.deskLegs })
+    decor.push({ column, row: row - 2, index: workstation.deskSurface })
+    decor.push({ column, row: row - 2, index: workstation.monitor })
 
-    decor.push({ column, row: row - 2, index: theme.tiles.deskBack })
-    decor.push({ column, row: row - 1, index: theme.tiles.deskFront })
-    decor.push({ column, row: row - 1, index: theme.tiles.computer })
-
-    block(column, row - 2)
     block(column, row - 1)
-  }
-
-  // A plant in each interior corner for a bit of life.
-  const corners: Array<[number, number]> = [
-    [1, 1],
-    [officeColumns - 2, 1],
-    [1, officeRows - 2],
-    [officeColumns - 2, officeRows - 2]
-  ]
-
-  for (const [column, row] of corners) {
-    decor.push({ column, row, index: theme.tiles.plant })
-    block(column, row)
+    block(column, row - 2)
   }
 
   return { floor, decor, blocked }

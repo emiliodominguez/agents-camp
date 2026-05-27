@@ -23,10 +23,12 @@ role (floor, wall, desk, chair, computer, plant, rugs). Adding a new theme is a
 new `Theme` object — no rendering code changes. `activeTheme` selects the
 current one.
 
-Art is **Kenney CC0** (public domain, no attribution required):
+Current art:
 
-- [Roguelike Indoors](https://kenney.nl/assets/roguelike-indoors) — the room
-- [Roguelike Characters](https://kenney.nl/assets/roguelike-characters) — the people
+- **Pixel Life — Desk Essentials** — the room (checkerboard floor, office
+  walls, monitors and desks)
+- [Kenney Roguelike Characters](https://kenney.nl/assets/roguelike-characters)
+  (CC0) — the people, until a matching character pack is added
 
 ## Run
 
