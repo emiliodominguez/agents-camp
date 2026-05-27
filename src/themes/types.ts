@@ -29,18 +29,22 @@ export interface GroundSpec {
 }
 
 /**
- * One playable/agent character: an idle animation strip loaded as its own
- * spritesheet. Frames are laid out left-to-right in a single row.
+ * One playable/agent character with directional idle and walk animations. Each
+ * direction is its own strip (frames laid out left-to-right); the side strip is
+ * mirrored for left vs right at render time. Sheets are named
+ * `<pathPrefix>-<d|s|u>-<idle|walk>.png`.
  */
 export interface CharacterSpec {
-  /** Stable texture key. */
+  /** Stable texture key (also the prefix for per-direction texture keys). */
   key: string
-  /** Public path to the idle strip. */
-  path: string
+  /** Public path prefix; per-direction files append `-<dir>-<state>.png`. */
+  pathPrefix: string
   /** Edge length of one (square) frame, in source pixels. */
   frameSize: number
-  /** Number of frames in the idle strip. */
-  frameCount: number
+  /** Number of frames in each idle strip. */
+  idleFrames: number
+  /** Number of frames in each walk strip. */
+  walkFrames: number
 }
 
 /**

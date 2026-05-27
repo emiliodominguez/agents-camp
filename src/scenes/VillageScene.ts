@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 
-import { Character } from '../objects/Character'
+import { Character, type Facing } from '../objects/Character'
 import { onAgentStatus } from '../services/agentClient'
 import { chatAgent, openChat, setNearbyAgent } from '../overlay/state'
 import { activeTheme } from '../themes'
@@ -17,19 +17,25 @@ import {
 } from '../world'
 
 /** Movement speed of the player avatar, in pixels per second. */
-const playerSpeed = 150
+const playerSpeed = 105
+
+/** Movement speed of wandering agents, in pixels per second (a slow amble). */
+const wanderSpeed = 45
+
+/** How far, in tiles, an agent may stray from its home while wandering. */
+const wanderRadius = 2.4
 
 /** Texture key for the loaded ground sheet. */
 const groundKey = 'ground'
 
-/**
- * The idle animation key for a character texture.
- *
- * @param textureKey - The character's texture key.
- * @returns The animation key.
- */
-function idleAnimationKey(textureKey: string): string {
-  return `${textureKey}-idle`
+/** A wandering agent's home anchor and current ambling target. */
+interface WanderState {
+  /** Pixel home position the agent strays around. */
+  home: { x: number; y: number }
+  /** Current pixel target, or undefined while pausing. */
+  target: { x: number; y: number } | undefined
+  /** Seconds remaining to pause before choosing a new target. */
+  pause: number
 }
 
 /**
@@ -46,6 +52,7 @@ export class VillageScene extends Phaser.Scene {
   private unsubscribeStatus: (() => void) | undefined
 
   private readonly characters = new Map<string, Character>()
+  private readonly wanderers = new Map<string, WanderState>()
   private furnishing!: Furnishing
 
   /** The agent the player is currently close enough to interact with. */
@@ -65,12 +72,17 @@ export class VillageScene extends Phaser.Scene {
       spacing: ground.margin
     })
 
-    // Each agent's villager is its own idle strip, sliced into square frames.
+    // Each villager has six directional strips (down/side/up × idle/walk),
+    // sliced into square frames.
     for (const character of activeTheme.characters) {
-      this.load.spritesheet(character.key, character.path, {
-        frameWidth: character.frameSize,
-        frameHeight: character.frameSize
-      })
+      for (const direction of ['d', 's', 'u'] as const) {
+        for (const state of ['idle', 'walk'] as const) {
+          this.load.spritesheet(`${character.key}-${direction}-${state}`, `${character.pathPrefix}-${direction}-${state}.png`, {
+            frameWidth: character.frameSize,
+            frameHeight: character.frameSize
+          })
+        }
+      }
     }
 
     // Each object sprite is its own native-size image.
@@ -126,15 +138,127 @@ export class VillageScene extends Phaser.Scene {
 
   override update(_time: number, delta: number): void {
     this.handleTalkKey()
+    this.updateWanderers(delta)
 
-    // Freeze movement and proximity changes while a chat is open so typing
-    // doesn't also drive the avatar.
+    // Freeze the player and proximity changes while a chat is open so typing
+    // doesn't also drive the avatar. Agents keep animating (the one being
+    // talked to turns to face the player).
     if (chatAgent() !== undefined) {
       return
     }
 
     this.movePlayer(delta)
     this.updateProximity()
+  }
+
+  /**
+   * Amble each idle agent slowly around its home, pausing between strolls. The
+   * agent the player is chatting with stops and faces the player instead.
+   *
+   * @param delta - Milliseconds since the previous frame.
+   */
+  private updateWanderers(delta: number): void {
+    const seconds = delta / 1000
+    const openChatId = chatAgent()?.id
+
+    for (const [id, state] of this.wanderers) {
+      const character = this.characters.get(id)
+
+      if (character === undefined) {
+        continue
+      }
+
+      // While being talked to, stop and turn toward the player.
+      if (id === openChatId) {
+        character.setMotion(this.directionToward(character, this.player), false)
+        state.target = undefined
+
+        continue
+      }
+
+      if (state.target === undefined) {
+        state.pause -= seconds
+
+        if (state.pause <= 0) {
+          state.target = this.pickWanderTarget(state)
+        } else {
+          character.setMotion(character.currentFacing, false)
+        }
+
+        continue
+      }
+
+      const step = wanderSpeed * seconds
+      const dx = state.target.x - character.x
+      const dy = state.target.y - character.y
+      const distance = Math.hypot(dx, dy)
+
+      if (distance <= step) {
+        // Arrived: settle and pause before the next stroll.
+        character.x = state.target.x
+        character.y = state.target.y
+        character.setMotion(character.currentFacing, false)
+        character.setDepth(Math.floor(character.y / tileSize) + 0.5)
+        state.target = undefined
+        state.pause = 1.5 + Math.random() * 3
+
+        continue
+      }
+
+      const facing: Facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down'
+      const nextX = character.x + (dx / distance) * step
+      const nextY = character.y + (dy / distance) * step
+
+      // Don't walk through obstacles; abandon a blocked target.
+      if (this.isBlocked(nextX, nextY)) {
+        state.target = undefined
+        state.pause = 0.5
+
+        continue
+      }
+
+      character.x = nextX
+      character.y = nextY
+      character.setMotion(facing, true)
+      character.setDepth(Math.floor(character.y / tileSize) + 0.5)
+    }
+  }
+
+  /**
+   * Pick a random walkable pixel target within the wander radius of home.
+   *
+   * @param state - The agent's wander state.
+   * @returns A target position, or undefined if none was found (the agent then pauses).
+   */
+  private pickWanderTarget(state: WanderState): { x: number; y: number } | undefined {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const angle = Math.random() * Math.PI * 2
+      const radius = (0.6 + Math.random() * wanderRadius) * tileSize
+      const x = state.home.x + Math.cos(angle) * radius
+      const y = state.home.y + Math.sin(angle) * radius
+
+      const inBounds = x > tileSize && x < officeColumns * tileSize - tileSize && y > tileSize && y < officeRows * tileSize - tileSize
+
+      if (inBounds && !this.isBlocked(x, y)) {
+        return { x, y }
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * The cardinal direction from one character toward another.
+   *
+   * @param from - The character that turns.
+   * @param to - The character to face.
+   * @returns The facing direction.
+   */
+  private directionToward(from: Character, to: Character): Facing {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+
+    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down'
   }
 
   /**
@@ -188,23 +312,32 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Register a looping idle animation for each citizen texture so every
-   * character can play its own walk-in-place cycle.
+   * Register looping idle and walk animations for each citizen, one per facing
+   * sheet (down/side/up). Walk plays faster than idle.
    */
   private registerAnimations(): void {
     for (const character of activeTheme.characters) {
-      const key = idleAnimationKey(character.key)
+      for (const direction of ['d', 's', 'u'] as const) {
+        const states: Array<{ state: 'idle' | 'walk'; frames: number; rate: number }> = [
+          { state: 'idle', frames: character.idleFrames, rate: 4 },
+          { state: 'walk', frames: character.walkFrames, rate: 8 }
+        ]
 
-      if (this.anims.exists(key)) {
-        continue
+        for (const { state, frames, rate } of states) {
+          const textureKey = `${character.key}-${direction}-${state}`
+
+          if (this.anims.exists(textureKey)) {
+            continue
+          }
+
+          this.anims.create({
+            key: textureKey,
+            frames: this.anims.generateFrameNumbers(textureKey, { start: 0, end: frames - 1 }),
+            frameRate: rate,
+            repeat: -1
+          })
+        }
       }
-
-      this.anims.create({
-        key,
-        frames: this.anims.generateFrameNumbers(character.key, { start: 0, end: character.frameCount - 1 }),
-        frameRate: 6,
-        repeat: -1
-      })
     }
   }
 
@@ -218,6 +351,9 @@ export class VillageScene extends Phaser.Scene {
       }
 
       this.characters.set(agent.id, this.createCharacter(agent, spec.key))
+
+      const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
+      this.wanderers.set(agent.id, { home: { x, y }, target: undefined, pause: Math.random() * 2 })
     })
   }
 
@@ -234,7 +370,6 @@ export class VillageScene extends Phaser.Scene {
     const character = new Character(this, x, y, {
       name: agent.name,
       texture: textureKey,
-      animationKey: idleAnimationKey(textureKey),
       status: agent.status,
       size: tileSize * 1.4
     })
@@ -253,7 +388,6 @@ export class VillageScene extends Phaser.Scene {
     this.player = new Character(this, x, y, {
       name: 'You',
       texture: textureKey,
-      animationKey: idleAnimationKey(textureKey),
       status: 'idle',
       size: tileSize * 1.4
     })
@@ -314,8 +448,14 @@ export class VillageScene extends Phaser.Scene {
     }
 
     if (dx === 0 && dy === 0) {
+      this.player.setMotion(this.player.currentFacing, false)
+
       return
     }
+
+    // Face the dominant axis of movement.
+    const facing: Facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down'
+    this.player.setMotion(facing, true)
 
     const length = Math.hypot(dx, dy)
 

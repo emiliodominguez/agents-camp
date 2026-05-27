@@ -377,12 +377,38 @@ function buildScatter(): Placement[] {
     }
   }
 
+  // A natural rock border around the world edge so the camp has a defined
+  // boundary instead of bleeding into open space. Road mouths stay clear
+  // because `add` skips path cells. The boulders thin out one tile in.
+  const boulders = ['rock-big', 'rock', 'rock-big']
+
+  for (let column = 0; column <= maxColumn; column += 1) {
+    add(boulders[column % boulders.length] ?? 'rock-big', column, 0)
+    add(boulders[(column + 1) % boulders.length] ?? 'rock-big', column, maxRow)
+
+    // A sparser second row so the edge reads as a band, not a wall.
+    if (column % 2 === 0) {
+      add('rock', column, 1)
+      add('rock', column, maxRow - 1)
+    }
+  }
+
+  for (let row = 1; row < maxRow; row += 1) {
+    add(boulders[row % boulders.length] ?? 'rock-big', 0, row)
+    add(boulders[(row + 1) % boulders.length] ?? 'rock-big', maxColumn, row)
+
+    if (row % 2 === 0) {
+      add('rock', 1, row)
+      add('rock', maxColumn - 1, row)
+    }
+  }
+
   return placements
 }
 
 /**
- * One CraftPix citizen per agent (and the player reuses the first). Each idle
- * strip is four 48px frames laid out in a row.
+ * One CraftPix citizen per agent (and the player reuses the first). Each
+ * direction has a 48px idle strip (4 frames) and walk strip (6 frames).
  *
  * @param index - Citizen folder number (1–4).
  * @returns The character spec.
@@ -390,9 +416,10 @@ function buildScatter(): Placement[] {
 function citizen(index: number): CharacterSpec {
   return {
     key: `citizen-${index}`,
-    path: `/assets/characters/citizens/citizen-${index}-idle.png`,
+    pathPrefix: `/assets/characters/citizens/citizen-${index}`,
     frameSize: 48,
-    frameCount: 4
+    idleFrames: 4,
+    walkFrames: 6
   }
 }
 
@@ -415,5 +442,7 @@ export const villageTheme: Theme = {
   agentStructures: ['house-1', 'tent-1', 'house-2', 'tent-2'],
   path: pathCells,
   scatter: buildScatter(),
-  backgroundColor: '#2f3a24'
+  // A grass-matching green so the world edges blend into the background rather
+  // than revealing dark void when the camera reaches a boundary.
+  backgroundColor: '#7da455'
 }

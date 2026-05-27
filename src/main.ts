@@ -3,8 +3,8 @@ import { render } from 'solid-js/web'
 
 import './styles.css'
 
-import { onAgentHello, onAgentReply, onAgentToken, startAgentClient } from './services/agentClient'
-import { appendAgentToken, commitAgentReply, setLiveMode } from './overlay/state'
+import { onAgentHello, onAgentReply, onAgentStatus, onAgentToken, startAgentClient } from './services/agentClient'
+import { appendAgentToken, chatAgent, closeChat, commitAgentReply, recordAgentStatus, setLiveMode } from './overlay/state'
 import { VillageScene } from './scenes/VillageScene'
 import { Overlay } from './overlay/Overlay'
 
@@ -35,6 +35,15 @@ if (overlayRoot !== null) {
 
 // Connect to the agent backend and route its stream into the overlay state.
 onAgentHello((live) => setLiveMode(live))
+onAgentStatus((agentId, status) => recordAgentStatus(agentId, status))
 onAgentToken((agentId, text) => appendAgentToken(agentId, text))
 onAgentReply((agentId, text) => commitAgentReply(agentId, text))
 startAgentClient()
+
+// Escape closes an open chat from anywhere (including the focused input).
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && chatAgent() !== undefined) {
+    event.preventDefault()
+    closeChat()
+  }
+})

@@ -3,13 +3,41 @@ import { createEffect, For, Show } from 'solid-js'
 import { activeTheme } from '../themes'
 import { sendChat } from '../services/agentClient'
 import { agents } from '../world'
-import { appendPlayerLine, chatAgent, chatLog, closeChat, liveMode, nearbyAgent, streamingReply } from './state'
+import type { AgentStatus } from '../../shared/protocol'
+import {
+  agentStatuses,
+  appendPlayerLine,
+  awaitingReply,
+  chatAgent,
+  chatLog,
+  closeChat,
+  liveMode,
+  nearbyAgent,
+  streamingReply
+} from './state'
+
+/** Short status word shown beside each agent in the roster. */
+const statusWord: Record<AgentStatus, string> = {
+  idle: 'idle',
+  working: 'working…',
+  talking: 'talking…'
+}
 
 /**
- * The UI layer drawn over the Phaser canvas: a roster of agents in the camp, a
- * contextual prompt when the player stands next to one, and a chat panel that
- * opens when they press E to talk. Chat messages stream in live from the agent
- * backend.
+ * Format an epoch-millisecond timestamp as a short HH:MM label.
+ *
+ * @param at - Epoch milliseconds.
+ * @returns The formatted time.
+ */
+function formatTime(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * The UI layer drawn over the Phaser canvas: a roster showing each agent's live
+ * status, a contextual prompt when the player stands next to one, and a chat
+ * panel that opens on E. Replies stream in token by token; history is restored
+ * from the previous session.
  *
  * @returns The overlay UI tree.
  */
@@ -21,6 +49,7 @@ export function Overlay() {
   createEffect(() => {
     chatLog()
     streamingReply()
+    awaitingReply()
 
     if (scroller !== undefined) {
       scroller.scrollTop = scroller.scrollHeight
@@ -59,24 +88,32 @@ export function Overlay() {
 
         <ul>
           <For each={agents}>
-            {(agent) => (
-              <li>
-                <span class="dot" style={{ background: agent.dotColor }} />
-                {agent.name}
-              </li>
-            )}
+            {(agent) => {
+              const status = (): AgentStatus => agentStatuses()[agent.id] ?? 'idle'
+
+              return (
+                <li>
+                  <span class="dot" classList={{ active: status() !== 'idle' }} style={{ background: agent.dotColor }} />
+                  <span class="name">{agent.name}</span>
+                  <span class={`status ${status()}`}>{statusWord[status()]}</span>
+                </li>
+              )
+            }}
           </For>
         </ul>
 
         <p class="hint">Walk with WASD or the arrow keys.</p>
-        <p class="hint">{liveMode() ? 'Agents: live (Claude)' : 'Agents: mock replies'}</p>
+        <p class="conn" classList={{ live: liveMode() }}>
+          <span class="conn-dot" />
+          {liveMode() ? 'Agents live (Claude)' : 'Agents in mock mode'}
+        </p>
       </div>
 
       <Show when={nearbyAgent()} keyed>
         {(agent) => (
           <Show when={chatAgent() === undefined}>
             <div class="panel prompt">
-              Near <strong>{agent.name}</strong> — press <kbd>E</kbd> to talk
+              Talk to <strong>{agent.name}</strong> — press <kbd>E</kbd>
             </div>
           </Show>
         )}
@@ -88,24 +125,49 @@ export function Overlay() {
             <header>
               <span class="dot" style={{ background: agent.dotColor }} />
               <strong>{agent.name}</strong>
-              <button type="button" class="close" onClick={closeChat} aria-label="Close chat">
+              <span class="header-status">{statusWord[agentStatuses()[agent.id] ?? 'idle']}</span>
+              <button type="button" class="close" onClick={closeChat} aria-label="Close chat (Esc)">
                 ✕
               </button>
             </header>
 
             <div class="transcript" ref={scroller}>
+              <Show when={chatLog().length === 0 && streamingReply() === '' && !awaitingReply()}>
+                <p class="empty">Say hello to {agent.name}.</p>
+              </Show>
+
               <For each={chatLog()}>
                 {(line) => (
                   <div class={`line ${line.from}`}>
-                    <span class="who">{line.from === 'you' ? 'You' : agent.name}</span>
+                    <span class="meta">
+                      <span class="who">{line.from === 'you' ? 'You' : agent.name}</span>
+                      <span class="time">{formatTime(line.at)}</span>
+                    </span>
                     <span class="text">{line.text}</span>
                   </div>
                 )}
               </For>
 
+              <Show when={awaitingReply()}>
+                <div class="line agent thinking">
+                  <span class="meta">
+                    <span class="who">{agent.name}</span>
+                  </span>
+                  <span class="text">
+                    <span class="dots">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </span>
+                </div>
+              </Show>
+
               <Show when={streamingReply() !== ''}>
                 <div class="line agent">
-                  <span class="who">{agent.name}</span>
+                  <span class="meta">
+                    <span class="who">{agent.name}</span>
+                  </span>
                   <span class="text">
                     {streamingReply()}
                     <span class="cursor" aria-hidden="true">
@@ -126,6 +188,10 @@ export function Overlay() {
               />
               <button type="submit">Send</button>
             </form>
+
+            <p class="chat-hint">
+              <kbd>Esc</kbd> to close
+            </p>
           </div>
         )}
       </Show>
