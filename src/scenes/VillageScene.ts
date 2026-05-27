@@ -18,9 +18,18 @@ import {
 /** Movement speed of the player avatar, in pixels per second. */
 const playerSpeed = 150
 
-/** Texture keys for the loaded sheets. */
+/** Texture key for the loaded ground sheet. */
 const groundKey = 'ground'
-const charactersKey = 'characters'
+
+/**
+ * The idle animation key for a character texture.
+ *
+ * @param textureKey - The character's texture key.
+ * @returns The animation key.
+ */
+function idleAnimationKey(textureKey: string): string {
+  return `${textureKey}-idle`
+}
 
 /**
  * The walkable scene. Loads the theme's ground tiles, object sprites, and
@@ -45,7 +54,6 @@ export class VillageScene extends Phaser.Scene {
 
   preload(): void {
     const ground = activeTheme.ground.sheet
-    const characters = activeTheme.characters
 
     this.load.spritesheet(groundKey, ground.path, {
       frameWidth: ground.frameSize,
@@ -54,12 +62,13 @@ export class VillageScene extends Phaser.Scene {
       spacing: ground.margin
     })
 
-    this.load.spritesheet(charactersKey, characters.path, {
-      frameWidth: characters.frameSize,
-      frameHeight: characters.frameSize,
-      margin: 0,
-      spacing: characters.margin
-    })
+    // Each agent's villager is its own idle strip, sliced into square frames.
+    for (const character of activeTheme.characters) {
+      this.load.spritesheet(character.key, character.path, {
+        frameWidth: character.frameSize,
+        frameHeight: character.frameSize
+      })
+    }
 
     // Each object sprite is its own native-size image.
     for (const sprite of Object.values(activeTheme.sprites)) {
@@ -70,6 +79,7 @@ export class VillageScene extends Phaser.Scene {
   create(): void {
     this.furnishing = furnish(activeTheme)
 
+    this.registerAnimations()
     this.drawGround()
     this.drawObjects()
     this.spawnAgents()
@@ -136,16 +146,37 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Register a looping idle animation for each citizen texture so every
+   * character can play its own walk-in-place cycle.
+   */
+  private registerAnimations(): void {
+    for (const character of activeTheme.characters) {
+      const key = idleAnimationKey(character.key)
+
+      if (this.anims.exists(key)) {
+        continue
+      }
+
+      this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers(character.key, { start: 0, end: character.frameCount - 1 }),
+        frameRate: 6,
+        repeat: -1
+      })
+    }
+  }
+
   /** Instantiate a Character for every configured agent. */
   private spawnAgents(): void {
-    activeTheme.characterFrames.forEach((frame, position) => {
-      const agent = agents[position]
+    agents.forEach((agent, position) => {
+      const spec = activeTheme.characters[position]
 
-      if (agent === undefined) {
+      if (spec === undefined) {
         return
       }
 
-      this.characters.set(agent.id, this.createCharacter(agent, frame))
+      this.characters.set(agent.id, this.createCharacter(agent, spec.key))
     })
   }
 
@@ -153,18 +184,18 @@ export class VillageScene extends Phaser.Scene {
    * Build one agent character where the agent stands.
    *
    * @param agent - The descriptor to render.
-   * @param frame - The character sheet frame to use.
+   * @param textureKey - The citizen texture to use.
    * @returns The created Character.
    */
-  private createCharacter(agent: AgentDescriptor, frame: number): Character {
+  private createCharacter(agent: AgentDescriptor, textureKey: string): Character {
     const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
 
     const character = new Character(this, x, y, {
       name: agent.name,
-      texture: charactersKey,
-      frame,
+      texture: textureKey,
+      animationKey: idleAnimationKey(textureKey),
       status: agent.status,
-      size: tileSize * 1.1
+      size: tileSize * 1.4
     })
 
     character.setDepth(agent.tile.row + 0.5)
@@ -172,16 +203,18 @@ export class VillageScene extends Phaser.Scene {
     return character
   }
 
-  /** Create the player avatar at the spawn tile. */
+  /** Create the player avatar at the spawn tile, using the first citizen. */
   private spawnPlayer(): void {
     const { x, y } = tileToPixel(playerSpawn.column, playerSpawn.row)
+    const spec = activeTheme.characters[0]
+    const textureKey = spec?.key ?? ''
 
     this.player = new Character(this, x, y, {
       name: 'You',
-      texture: charactersKey,
-      frame: activeTheme.characterFrames[0] ?? 0,
+      texture: textureKey,
+      animationKey: idleAnimationKey(textureKey),
       status: 'idle',
-      size: tileSize * 1.1
+      size: tileSize * 1.4
     })
 
     this.player.setDepth(playerSpawn.row + 0.5)

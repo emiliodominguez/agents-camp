@@ -1,7 +1,7 @@
 import { villageTheme } from './village'
 import type { Theme } from './types'
 
-export type { Theme, Placement, ObjectSprite, GroundSpec, SheetSpec } from './types'
+export type { Theme, Placement, ObjectSprite, GroundSpec, SheetSpec, CharacterSpec } from './types'
 
 /** Every theme the scene can render in. */
 export const themes: Theme[] = [villageTheme]

@@ -15,8 +15,11 @@ export interface CharacterOptions {
   name: string
   /** Texture key of the loaded character spritesheet. */
   texture: string
-  /** Frame index within that sheet. */
-  frame: number
+  /**
+   * Animation key to play on a loop (the character's idle cycle). The animation
+   * must already be registered on the scene's animation manager.
+   */
+  animationKey: string
   /** Initial lifecycle state. */
   status: AgentStatus
   /** Rendered sprite size in pixels (source frames are scaled to this). */
@@ -24,12 +27,11 @@ export interface CharacterOptions {
 }
 
 /**
- * A character in the office: a real pixel-art sprite from the theme's character
- * sheet, with a floating name label and a status bubble. A gentle idle bob
- * keeps the room feeling alive without a dedicated walk-cycle spritesheet.
+ * A character in the camp: a real animated pixel-art villager playing a looping
+ * idle cycle, with a floating name label and a status bubble above its head.
  */
 export class Character extends Phaser.GameObjects.Container {
-  private readonly sprite: Phaser.GameObjects.Image
+  private readonly sprite: Phaser.GameObjects.Sprite
   private readonly label: Phaser.GameObjects.Text
   private readonly bubble: Phaser.GameObjects.Text
 
@@ -41,10 +43,11 @@ export class Character extends Phaser.GameObjects.Container {
 
     this.radius = options.size * 0.6
 
-    this.sprite = scene.add.image(0, 0, options.texture, options.frame)
+    this.sprite = scene.add.sprite(0, 0, options.texture)
     this.sprite.setDisplaySize(options.size, options.size)
+    this.sprite.play(options.animationKey)
 
-    this.label = scene.add.text(0, options.size * 0.55, options.name, {
+    this.label = scene.add.text(0, options.size * 0.5, options.name, {
       fontFamily: 'ui-monospace, monospace',
       fontSize: '11px',
       color: '#e6e9f0'
@@ -52,7 +55,7 @@ export class Character extends Phaser.GameObjects.Container {
     this.label.setOrigin(0.5, 0)
     this.label.setShadow(0, 1, '#000000', 2)
 
-    this.bubble = scene.add.text(0, -options.size * 0.7, statusGlyph[options.status], {
+    this.bubble = scene.add.text(0, -options.size * 0.55, statusGlyph[options.status], {
       fontSize: '15px'
     })
     this.bubble.setOrigin(0.5, 0.5)
@@ -60,8 +63,6 @@ export class Character extends Phaser.GameObjects.Container {
     this.add([this.sprite, this.label, this.bubble])
 
     scene.add.existing(this)
-
-    this.startIdleBob(scene)
   }
 
   /**
@@ -80,23 +81,6 @@ export class Character extends Phaser.GameObjects.Container {
    */
   setHighlighted(active: boolean): void {
     this.label.setColor(active ? '#ffffff' : '#e6e9f0')
-    this.sprite.setScale(active ? this.sprite.scaleX * 1.08 : this.sprite.scaleX)
-    this.setDepth(active ? 1000 : this.y)
-  }
-
-  /**
-   * Start a slow vertical bob on the sprite so idle characters feel alive.
-   *
-   * @param scene - The owning scene, used for its tween manager.
-   */
-  private startIdleBob(scene: Phaser.Scene): void {
-    scene.tweens.add({
-      targets: this.sprite,
-      y: -2,
-      duration: 900,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.inOut'
-    })
+    this.label.setFontStyle(active ? 'bold' : 'normal')
   }
 }

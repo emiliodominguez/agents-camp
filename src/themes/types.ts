@@ -29,6 +29,21 @@ export interface GroundSpec {
 }
 
 /**
+ * One playable/agent character: an idle animation strip loaded as its own
+ * spritesheet. Frames are laid out left-to-right in a single row.
+ */
+export interface CharacterSpec {
+  /** Stable texture key. */
+  key: string
+  /** Public path to the idle strip. */
+  path: string
+  /** Edge length of one (square) frame, in source pixels. */
+  frameSize: number
+  /** Number of frames in the idle strip. */
+  frameCount: number
+}
+
+/**
  * A free-placed object sprite (house, tent, barrel, lamp…), loaded as its own
  * image at native size. Sprites are anchored by their bottom centre so taller
  * objects sit naturally on the ground.
@@ -64,12 +79,11 @@ export interface Theme {
   ground: GroundSpec
   /** Every object sprite the theme can place, keyed for lookup. */
   sprites: Record<string, ObjectSprite>
-  /** The character spritesheet. */
-  characters: SheetSpec
-  /** Number of columns in the character sheet, for index→frame math. */
-  characterColumns: number
-  /** Character frame indices to assign to agents, in order. */
-  characterFrames: number[]
+  /**
+   * One idle character strip per agent, in agent order. The last entry is also
+   * reused for the player avatar.
+   */
+  characters: CharacterSpec[]
   /** Sprite key each agent stands beside, in agent order (a home/tent). */
   agentStructures: string[]
   /** Authored walkable-path cells, painted with `ground.pathTile`. */

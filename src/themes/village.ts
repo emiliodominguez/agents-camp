@@ -1,5 +1,5 @@
 import { agents, officeColumns, officeRows, playerSpawn } from '../world'
-import type { ObjectSprite, Placement, Theme } from './types'
+import type { CharacterSpec, ObjectSprite, Placement, Theme } from './types'
 
 /**
  * A medieval-village camp built from the CraftPix "Free Village / Top-Down
@@ -380,6 +380,25 @@ function buildScatter(): Placement[] {
   return placements
 }
 
+/**
+ * One CraftPix citizen per agent (and the player reuses the first). Each idle
+ * strip is four 48px frames laid out in a row.
+ *
+ * @param index - Citizen folder number (1–4).
+ * @returns The character spec.
+ */
+function citizen(index: number): CharacterSpec {
+  return {
+    key: `citizen-${index}`,
+    path: `/assets/characters/citizens/citizen-${index}-idle.png`,
+    frameSize: 48,
+    frameCount: 4
+  }
+}
+
+// Agents take citizens 1–4 in order; the player avatar reuses citizen 1.
+const characters: CharacterSpec[] = [citizen(1), citizen(2), citizen(3), citizen(4)]
+
 export const villageTheme: Theme = {
   id: 'village',
   name: 'Village Camp',
@@ -392,13 +411,7 @@ export const villageTheme: Theme = {
     pathTile: 19
   },
   sprites: Object.fromEntries(spriteList.map((entry) => [entry.key, entry])),
-  characters: {
-    path: '/assets/characters/roguelike.png',
-    frameSize: 16,
-    margin: 1
-  },
-  characterColumns: 54,
-  characterFrames: [0, 2 * 54 + 1, 5 * 54, 7 * 54 + 1, 9 * 54],
+  characters,
   agentStructures: ['house-1', 'tent-1', 'house-2', 'tent-2'],
   path: pathCells,
   scatter: buildScatter(),
