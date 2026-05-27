@@ -85,14 +85,19 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Zoom the camera so the scene comfortably fills the viewport. The scene is
-   * smaller than most windows, so without this it renders 1:1 in a corner.
+   * Zoom the camera to a fixed, comfortable scale and follow the player. The
+   * world is larger than the viewport, so the edges scroll off-screen as the
+   * player walks. The zoom drops on small viewports so a useful slice of the
+   * world stays visible.
    */
   private applyZoom(): void {
-    const sceneWidth = officeColumns * tileSize
-    const sceneHeight = officeRows * tileSize
+    const baseZoom = 2
 
-    const zoom = Math.max(1, Math.min(this.scale.width / sceneWidth, this.scale.height / sceneHeight))
+    // Never zoom in so far that fewer than ~12 tiles fit across the viewport.
+    const minTilesAcross = 12
+    const fitZoom = this.scale.width / (minTilesAcross * tileSize)
+
+    const zoom = Math.max(1, Math.min(baseZoom, fitZoom))
 
     this.cameras.main.setZoom(zoom)
   }

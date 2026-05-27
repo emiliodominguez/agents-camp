@@ -25,23 +25,28 @@ export interface AgentDescriptor {
 /** Rendered edge length of one tile, in pixels (matches the 32px source art). */
 export const tileSize = 32
 
-/** Scene size, measured in tiles. */
-export const officeColumns = 14
-export const officeRows = 12
+/**
+ * Scene size, measured in tiles. The world is larger than the viewport — the
+ * camera follows the player and the edges scroll off-screen, so the camp feels
+ * like a place you explore rather than a single tableau.
+ */
+export const officeColumns = 26
+export const officeRows = 20
 
 /** The avatar the player drives around the scene. */
-export const playerSpawn = { column: 7, row: 9 }
+export const playerSpawn = { column: 12, row: 13 }
 
 /**
  * The agents currently in the camp. Hard-coded placeholders for now — the names
  * are evocative of the roles we expect real Claude Code agents to play. Each
- * stands in front of their home (a house or tent), spread across the camp.
+ * stands in front of their home (a house or tent), spread across the camp so
+ * the player walks the roads between them.
  */
 export const agents: AgentDescriptor[] = [
-  { id: 'planner', name: 'Planner', tile: { column: 3, row: 5 }, dotColor: '#7c9cff', status: 'idle' },
-  { id: 'builder', name: 'Builder', tile: { column: 7, row: 5 }, dotColor: '#6bd6a4', status: 'working' },
-  { id: 'reviewer', name: 'Reviewer', tile: { column: 10, row: 5 }, dotColor: '#f0a868', status: 'idle' },
-  { id: 'explorer', name: 'Explorer', tile: { column: 12, row: 8 }, dotColor: '#d58cf0', status: 'talking' }
+  { id: 'planner', name: 'Planner', tile: { column: 5, row: 6 }, dotColor: '#7c9cff', status: 'idle' },
+  { id: 'builder', name: 'Builder', tile: { column: 12, row: 5 }, dotColor: '#6bd6a4', status: 'working' },
+  { id: 'reviewer', name: 'Reviewer', tile: { column: 20, row: 6 }, dotColor: '#f0a868', status: 'idle' },
+  { id: 'explorer', name: 'Explorer', tile: { column: 21, row: 14 }, dotColor: '#d58cf0', status: 'talking' }
 ]
 
 /** Distance, in pixels, within which the player can interact with an agent. */
