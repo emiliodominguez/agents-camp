@@ -1,0 +1,21 @@
+{
+  "name": "claude-office",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A pixel-art office where Claude Code agents appear as walkable characters.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "^4.1.0",
+    "solid-js": "^1.9.13"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

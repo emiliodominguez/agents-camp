@@ -1,0 +1,105 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0b0d12;
+  overflow: hidden;
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* Phaser renders a single canvas; keep its pixels crisp. */
+#game canvas {
+  image-rendering: pixelated;
+}
+
+/* The Solid UI overlay sits above the canvas. It is click-through by default
+   so movement still works; individual panels re-enable pointer events. */
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#overlay .panel {
+  pointer-events: auto;
+  background: rgba(17, 20, 28, 0.85);
+  border: 1px solid #2c3450;
+  border-radius: 10px;
+  color: #e6e9f0;
+  backdrop-filter: blur(6px);
+}
+
+.roster {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 14px 16px;
+  min-width: 160px;
+}
+
+.roster h1 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa4c0;
+}
+
+.roster ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.roster li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.roster .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.roster .hint {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #6b7390;
+}
+
+.prompt {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.prompt kbd {
+  background: #2c3450;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font: inherit;
+}
