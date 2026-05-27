@@ -1,14 +1,14 @@
 import type { Theme } from './types'
 
 /**
- * "Pixel Life — Desk Essentials" room art (checkerboard floor, tan office walls,
- * monitors and desks) paired with Kenney's roguelike character sprites until a
- * matching character pack is added. The desk sheet is an 18-column, 16px grid.
+ * "Pixel Life — Office Essentials" room art (checkerboard stone floor, tan
+ * office walls, monitors and desks) paired with Kenney's roguelike character
+ * sprites until a matching character pack is added. The sheet is a 9-column,
+ * 32px grid (each asset is one full 32px tile).
  *
  * Tile indices read off the sheet:
- *   floor 48/49 (light/dark checkerboard), wall body 14, wall base 50,
- *   desk surface 0 over legs 18, monitor 43, decor: chart 47, papers 10,
- *   extinguisher 45.
+ *   desk 0, wall 7, door 8, monitor 12, chart 14, floor 15;
+ *   decor: chart 14, papers 5, extinguisher 13.
  */
 
 const characterColumns = 54
@@ -29,7 +29,7 @@ export const deskEssentialsTheme: Theme = {
   name: 'Desk Essentials',
   tileset: {
     path: '/assets/themes/office/desk-essentials.png',
-    frameSize: 16,
+    frameSize: 32,
     margin: 0
   },
   characters: {
@@ -40,10 +40,10 @@ export const deskEssentialsTheme: Theme = {
   characterColumns,
   characterFrames: [character(0, 0), character(1, 2), character(0, 5), character(1, 7), character(0, 9)],
   tiles: {
-    floor: { light: 48, dark: 49 },
-    wall: { body: 14, base: 50 },
-    workstation: { deskSurface: 0, deskLegs: 18, monitor: 43 },
-    decor: [47, 10, 45]
+    floor: 15,
+    wall: 7,
+    workstation: { desk: 0, monitor: 12 },
+    decor: [14, 5, 13]
   },
   backgroundColor: '#1a1410'
 }

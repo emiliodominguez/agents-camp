@@ -16,40 +16,23 @@ export interface SheetSpec {
 }
 
 /**
- * Floor fill. The two indices alternate in a checkerboard; pass the same value
- * twice for a plain floor.
- */
-export interface FloorRole {
-  light: number
-  dark: number
-}
-
-/**
- * The wall band along the room's top edge: a body row and the baseboard row
- * where it meets the floor. Side and bottom edges reuse `body`.
- */
-export interface WallRole {
-  body: number
-  base: number
-}
-
-/**
- * A workstation: a desk built from a surface tile over a legs tile, with a
- * monitor sitting on the surface. Tiles are stacked vertically at the agent's
- * column. The chair is the character's own tile (the agent sprite sits there).
+ * A workstation: a single desk tile with a monitor tile sitting on it. Both are
+ * placed one row above the agent's chair (the agent sprite sits at the chair).
  */
 export interface WorkstationRole {
-  deskSurface: number
-  deskLegs: number
+  desk: number
   monitor: number
 }
 
-/** Named tile roles used to furnish the room. */
+/** Named tile roles used to furnish the room. Each value is a tile index. */
 export interface TileRoles {
-  floor: FloorRole
-  wall: WallRole
+  /** Walkable floor tile (may itself contain a checkerboard pattern). */
+  floor: number
+  /** Perimeter wall tile. */
+  wall: number
+  /** The workstation tiles. */
   workstation: WorkstationRole
-  /** A decorative prop placed against the top wall. */
+  /** Decorative props placed against the top wall. */
   decor: number[]
 }
 

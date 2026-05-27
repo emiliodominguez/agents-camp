@@ -19,10 +19,9 @@ export interface Furnishing {
 }
 
 /**
- * Compose the office from a theme: a checkerboard floor, a perimeter wall (a
- * two-row band along the top, single tiles elsewhere), one workstation per
- * agent (desk surface + legs + monitor above the agent's chair), and a few
- * decor props along the back wall. Walls and desks are impassable.
+ * Compose the office from a theme: a floor fill, a single-tile perimeter wall,
+ * one workstation per agent (desk + monitor one row above the agent's chair),
+ * and a few decor props along the back wall. Walls and desks are impassable.
  *
  * @param theme - The active theme supplying tile indices.
  * @returns Tile placements split into floor and decor layers, plus blocked cells.
@@ -36,56 +35,43 @@ export function furnish(theme: Theme): Furnishing {
     blocked.add(`${column},${row}`)
   }
 
-  const { floor: floorTiles, wall, workstation, decor: decorTiles } = theme.tiles
+  const { floor: floorTile, wall, workstation, decor: decorTiles } = theme.tiles
 
-  // Checkerboard floor across the whole room.
+  // Floor across the whole room.
   for (let row = 0; row < officeRows; row += 1) {
     for (let column = 0; column < officeColumns; column += 1) {
-      const checker = (row + column) % 2 === 0 ? floorTiles.light : floorTiles.dark
-
-      floor.push({ column, row, index: checker })
+      floor.push({ column, row, index: floorTile })
     }
   }
 
-  // Perimeter wall. The top edge is a two-row band (body then baseboard); the
-  // left, right, and bottom edges are a single body tile.
-  for (let column = 0; column < officeColumns; column += 1) {
-    decor.push({ column, row: 0, index: wall.body })
-    decor.push({ column, row: 1, index: wall.base })
+  // Single-tile perimeter wall.
+  for (let row = 0; row < officeRows; row += 1) {
+    for (let column = 0; column < officeColumns; column += 1) {
+      const onEdge = row === 0 || column === 0 || row === officeRows - 1 || column === officeColumns - 1
 
-    decor.push({ column, row: officeRows - 1, index: wall.body })
-
-    block(column, 0)
-    block(column, 1)
-    block(column, officeRows - 1)
-  }
-
-  for (let row = 2; row < officeRows - 1; row += 1) {
-    decor.push({ column: 0, row, index: wall.body })
-    decor.push({ column: officeColumns - 1, row, index: wall.body })
-
-    block(0, row)
-    block(officeColumns - 1, row)
+      if (onEdge) {
+        decor.push({ column, row, index: wall })
+        block(column, row)
+      }
+    }
   }
 
   // Decor props sitting just below the back wall.
   decorTiles.forEach((index, position) => {
     const column = 3 + position * 5
 
-    decor.push({ column, row: 2, index })
+    decor.push({ column, row: 1, index })
   })
 
-  // One workstation per agent. `tile` is the chair the agent sits at; above it
-  // sit the desk legs, then the desk surface with a monitor resting on it.
+  // One workstation per agent. `tile` is the chair the agent sits at; the desk
+  // and its monitor sit one row above.
   for (const agent of agents) {
     const { column, row } = agent.tile
 
-    decor.push({ column, row: row - 1, index: workstation.deskLegs })
-    decor.push({ column, row: row - 2, index: workstation.deskSurface })
-    decor.push({ column, row: row - 2, index: workstation.monitor })
+    decor.push({ column, row: row - 1, index: workstation.desk })
+    decor.push({ column, row: row - 1, index: workstation.monitor })
 
     block(column, row - 1)
-    block(column, row - 2)
   }
 
   return { floor, decor, blocked }
