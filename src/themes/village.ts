@@ -69,14 +69,23 @@ const spriteList: ObjectSprite[] = [
   sprite('tuft-4', 'grass/1', 0, 0),
   sprite('tuft-5', 'grass/3', 0, 0),
   sprite('tuft-6', 'grass/5', 0, 0),
-  // Trees and vegetation (generated; warm palette). Trees and pines block at
-  // their trunk; bushes block lightly; flowers are decoration.
+  // Trees and vegetation (generated; warm palette, several seeded variants).
+  // Trees and pines block at their trunk; bushes block lightly; flowers are
+  // decoration.
   sprite('tree-1', 'foliage/tree-1', 1, 1),
   sprite('tree-2', 'foliage/tree-2', 1, 1),
+  sprite('tree-3', 'foliage/tree-3', 1, 1),
+  sprite('tree-4', 'foliage/tree-4', 1, 1),
+  sprite('tree-5', 'foliage/tree-5', 1, 1),
+  sprite('tree-6', 'foliage/tree-6', 1, 1),
   sprite('pine-1', 'foliage/pine-1', 1, 1),
+  sprite('pine-2', 'foliage/pine-2', 1, 1),
+  sprite('pine-3', 'foliage/pine-3', 1, 1),
   sprite('bush-1', 'foliage/bush-1', 1, 1),
   sprite('bush-2', 'foliage/bush-2', 1, 1),
-  sprite('flowers-1', 'foliage/flowers-1', 0, 0)
+  sprite('bush-3', 'foliage/bush-3', 1, 1),
+  sprite('flowers-1', 'foliage/flowers-1', 0, 0),
+  sprite('flowers-2', 'foliage/flowers-2', 0, 0)
 ]
 
 /**
@@ -308,17 +317,21 @@ const reservedKeys = (() => {
  */
 function buildScatter(): Placement[] {
   const placements: Placement[] = []
+  const taken = new Set<string>()
 
-  const add = (sprite: string, column: number, row: number): void => {
+  const add = (sprite: string, column: number, row: number, offsetX = 0, offsetY = 0): void => {
     if (column < 0 || column > maxColumn || row < 0 || row > maxRow) {
       return
     }
 
-    if (reservedKeys.has(`${column},${row}`) || isPath(column, row)) {
+    const key = `${column},${row}`
+
+    if (reservedKeys.has(key) || isPath(column, row) || taken.has(key)) {
       return
     }
 
-    placements.push({ sprite, column, row })
+    taken.add(key)
+    placements.push({ sprite, column, row, offsetX, offsetY })
   }
 
   // Lamp posts and market signs lining the roads, hand-placed near the hub and
@@ -394,35 +407,69 @@ function buildScatter(): Placement[] {
       const choice = pool[Math.floor(rand(seed * 3.1) * pool.length)]
 
       if (choice !== undefined) {
-        add(choice, column, row)
+        // Small sub-tile jitter so field decor doesn't sit on a perfect grid.
+        const jx = Math.round((rand(seed * 5.2) - 0.5) * 10)
+        const jy = Math.round((rand(seed * 7.7) - 0.5) * 8)
+        add(choice, column, row, jx, jy)
       }
     }
   }
 
-  // A warm treeline rings the world so the camp nestles in a clearing instead
-  // of bleeding into open space. Road mouths stay clear because `add` skips
-  // path cells. Trees alternate with pines and thin one tile inward.
-  const treeline = ['tree-1', 'pine-1', 'tree-2', 'tree-1', 'pine-1']
+  // An irregular forest band rings the world so the camp nestles in a clearing.
+  // Rather than one ruled row, each edge cell gets a *probabilistic* depth of
+  // trees with random species, sub-tile jitter, and occasional gaps — so the
+  // treeline reads as a natural wood, not a fence. Road mouths stay clear
+  // because `add` skips path cells.
+  const trees = ['tree-1', 'tree-2', 'tree-3', 'tree-4', 'tree-5', 'tree-6', 'pine-1', 'pine-2', 'pine-3']
+  const undergrowth = ['bush-1', 'bush-2', 'bush-3', 'flowers-1', 'flowers-2']
+  let forestSeed = 5000
 
-  for (let column = 0; column <= maxColumn; column += 1) {
-    add(treeline[column % treeline.length] ?? 'tree-1', column, 0)
-    add(treeline[(column + 2) % treeline.length] ?? 'tree-1', column, maxRow)
+  /**
+   * Plant a clump of edge forest at a cell: a tree most of the time (with
+   * jitter), sometimes undergrowth, sometimes a gap.
+   *
+   * @param column - Cell column.
+   * @param row - Cell row.
+   * @param density - Probability [0,1] that anything is planted here.
+   */
+  const plantEdge = (column: number, row: number, density: number): void => {
+    forestSeed += 1
+    const roll = rand(forestSeed)
 
-    // A sparser inner row so the treeline reads as a grove, not a fence.
-    if (column % 3 === 0) {
-      add('bush-1', column, 1)
-      add('bush-2', column, maxRow - 1)
+    if (roll > density) {
+      return
+    }
+
+    const jx = Math.round((rand(forestSeed * 2.3) - 0.5) * 14)
+    const jy = Math.round((rand(forestSeed * 3.9) - 0.5) * 12)
+
+    if (roll < density * 0.72) {
+      const tree = trees[Math.floor(rand(forestSeed * 5.1) * trees.length)] ?? 'tree-1'
+      add(tree, column, row, jx, jy)
+    } else {
+      const plant = undergrowth[Math.floor(rand(forestSeed * 6.3) * undergrowth.length)] ?? 'bush-1'
+      add(plant, column, row, jx, jy)
     }
   }
 
-  for (let row = 1; row < maxRow; row += 1) {
-    add(treeline[row % treeline.length] ?? 'tree-1', 0, row)
-    add(treeline[(row + 2) % treeline.length] ?? 'tree-1', maxColumn, row)
+  // Top and bottom bands: dense at the very edge, thinning inward over 3 rows.
+  for (let column = 0; column <= maxColumn; column += 1) {
+    plantEdge(column, 0, 0.95)
+    plantEdge(column, 1, 0.6)
+    plantEdge(column, 2, 0.28)
+    plantEdge(column, maxRow, 0.95)
+    plantEdge(column, maxRow - 1, 0.6)
+    plantEdge(column, maxRow - 2, 0.28)
+  }
 
-    if (row % 3 === 0) {
-      add('bush-2', 1, row)
-      add('bush-1', maxColumn - 1, row)
-    }
+  // Left and right bands (skip the corners already done above).
+  for (let row = 1; row < maxRow; row += 1) {
+    plantEdge(0, row, 0.95)
+    plantEdge(1, row, 0.6)
+    plantEdge(2, row, 0.28)
+    plantEdge(maxColumn, row, 0.95)
+    plantEdge(maxColumn - 1, row, 0.6)
+    plantEdge(maxColumn - 2, row, 0.28)
   }
 
   return placements

@@ -71,6 +71,9 @@ export interface Placement {
   /** Anchor cell (the object's bottom-centre rests at this tile). */
   column: number
   row: number
+  /** Optional pixel jitter from the cell centre, to break up grid alignment. */
+  offsetX?: number
+  offsetY?: number
 }
 
 /** A complete look for the scene. */

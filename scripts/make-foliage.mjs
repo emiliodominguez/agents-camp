@@ -165,94 +165,185 @@ class Grid {
   }
 }
 
-// Warm palette — autumnal greens leaning gold, warm trunks.
+// Warm palette — autumnal greens leaning gold, warm trunks. Several green
+// families so different trees read as different species, not recolours.
 const palette = {
-  trunk: [110, 78, 50],
-  trunkDark: [86, 58, 36],
-  leafDark: [86, 122, 52],
-  leafMid: [122, 162, 66],
-  leafLight: [164, 196, 92],
-  leafGold: [206, 192, 96],
-  bushDark: [96, 132, 58],
-  bushMid: [134, 170, 70],
+  trunk: [120, 84, 52],
+  trunkDark: [88, 58, 36],
+  trunkLight: [146, 104, 66],
+  shadow: [70, 92, 48],
+  // Leaf ramps: [darkest (underside), mid, light, highlight].
+  leafGreen: [
+    [70, 104, 46],
+    [104, 146, 58],
+    [142, 178, 78],
+    [176, 204, 104]
+  ],
+  leafWarm: [
+    [96, 110, 44],
+    [140, 150, 56],
+    [184, 184, 80],
+    [212, 200, 110]
+  ],
+  leafDeep: [
+    [58, 92, 50],
+    [86, 124, 60],
+    [120, 158, 78],
+    [156, 188, 100]
+  ],
+  bushDark: [86, 122, 52],
+  bushMid: [124, 162, 68],
+  bushLight: [160, 192, 92],
   flower: [228, 138, 96],
   flowerAlt: [232, 196, 110],
-  pine: [78, 120, 70],
-  pineDark: [58, 96, 56],
-  pineLight: [120, 158, 86]
+  flowerCool: [196, 156, 220],
+  pine: [
+    [48, 86, 52],
+    [70, 112, 64],
+    [98, 142, 78]
+  ]
 }
 
 /**
- * A round, full-canopy deciduous tree with warm dappled highlights.
+ * A tiny seeded random in [0, 1), so each tree variant is distinct but stable.
  *
- * @param goldHeavy - When true, more golden highlight for an autumn feel.
+ * @param seed - The variant seed (mutated by reference via the returned fn).
+ * @returns A function returning the next pseudo-random value.
+ */
+function rng(seed) {
+  let state = seed * 9301 + 49297
+
+  return () => {
+    state = (state * 9301 + 49297) % 233280
+
+    return state / 233280
+  }
+}
+
+/**
+ * A round-canopy broadleaf tree. Size, lean, leaf ramp and dappling vary by
+ * seed, and the canopy is shaded dark→light top-down with a soft ground
+ * shadow, so a row of them reads as a varied grove.
+ *
+ * @param seed - Variant seed.
  * @returns The grid.
  */
-function deciduousTree(goldHeavy) {
-  const g = new Grid(20, 26)
+function broadleafTree(seed) {
+  const random = rng(seed)
+  const ramp = [palette.leafGreen, palette.leafWarm, palette.leafDeep][Math.floor(random() * 3)]
 
-  // Trunk.
-  g.rect(9, 18, 3, 7, palette.trunk)
-  g.rect(9, 18, 1, 7, palette.trunkDark)
-  // Roots flare.
-  g.set(8, 24, palette.trunkDark)
-  g.set(12, 24, palette.trunk)
+  // Size varies a lot: small saplings to big old trees.
+  const radius = 5 + Math.floor(random() * 5) // 5..9
+  const w = radius * 2 + 6
+  const h = radius * 2 + radius + 12
+  const g = new Grid(w, h)
 
-  // Canopy — overlapping discs.
-  g.disc(10, 10, 8, palette.leafDark)
-  g.disc(8, 9, 6, palette.leafMid)
-  g.disc(13, 11, 5, palette.leafMid)
-  g.disc(10, 7, 5, palette.leafLight)
+  const cx = Math.floor(w / 2)
+  const groundY = h - 1
+  const trunkH = radius + 3 + Math.floor(random() * 3)
+  const trunkW = radius >= 8 ? 4 : radius >= 6 ? 3 : 2
+  const canopyCy = groundY - trunkH - radius + 2
 
-  // Warm dapples.
-  const dappleColor = goldHeavy ? palette.leafGold : palette.leafLight
-  const dapples = [
-    [7, 6],
-    [12, 6],
-    [9, 4],
-    [14, 9],
-    [5, 11],
-    [11, 9],
-    [8, 12],
-    [15, 12]
-  ]
-
-  for (const [x, y] of dapples) {
-    g.set(x, y, dappleColor)
+  // Ground shadow ellipse.
+  for (let x = -radius; x <= radius; x += 1) {
+    if ((x * x) / (radius * radius) <= 1) {
+      g.set(cx + x, groundY, palette.shadow)
+      if (Math.abs(x) < radius - 1) {
+        g.set(cx + x, groundY - 1, palette.shadow)
+      }
+    }
   }
 
-  if (goldHeavy) {
-    g.disc(13, 7, 3, palette.leafGold)
+  // Trunk with a light edge and dark side.
+  const trunkX = cx - Math.floor(trunkW / 2)
+  g.rect(trunkX, groundY - trunkH - 1, trunkW, trunkH, palette.trunk)
+  g.rect(trunkX, groundY - trunkH - 1, 1, trunkH, palette.trunkDark)
+
+  if (trunkW >= 3) {
+    g.rect(trunkX + trunkW - 1, groundY - trunkH - 1, 1, trunkH, palette.trunkLight)
+  }
+
+  // Canopy: several overlapping lobes for an irregular silhouette.
+  const lobes = 3 + Math.floor(random() * 3)
+
+  for (let i = 0; i < lobes; i += 1) {
+    const lx = cx + Math.round((random() - 0.5) * radius)
+    const ly = canopyCy + Math.round((random() - 0.5) * radius * 0.7)
+    const lr = radius - 1 - Math.floor(random() * 2)
+    g.disc(lx, ly, lr, ramp[0])
+  }
+
+  // Vertical shade pass: lighter toward the top, darker underside.
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const c = g.px[y * w + x]
+
+      if (c !== ramp[0]) {
+        continue
+      }
+
+      const t = (canopyCy + radius - y) / (radius * 2) // 1 top .. 0 bottom
+      const band = t > 0.62 ? 3 : t > 0.34 ? 2 : t > 0.12 ? 1 : 0
+      g.set(x, y, ramp[band])
+    }
+  }
+
+  // A few warm dapples in the lit upper half.
+  const dapples = 4 + Math.floor(random() * 4)
+
+  for (let i = 0; i < dapples; i += 1) {
+    const dx = cx + Math.round((random() - 0.4) * radius)
+    const dy = canopyCy - Math.floor(random() * radius * 0.7)
+
+    if (g.px[dy * w + dx] !== null) {
+      g.set(dx, dy, ramp[3])
+    }
   }
 
   return g
 }
 
 /**
- * A conifer / pine for variety.
+ * A conifer / pine. Height, tier count and width vary by seed.
  *
+ * @param seed - Variant seed.
  * @returns The grid.
  */
-function pineTree() {
-  const g = new Grid(18, 28)
+function pineTree(seed) {
+  const random = rng(seed)
+  const tierCount = 3 + Math.floor(random() * 2) // 3..4
+  const half = 5 + Math.floor(random() * 3) // 5..7
+  const tierStep = 4 + Math.floor(random() * 2)
 
-  g.rect(8, 22, 2, 6, palette.trunkDark)
+  const w = half * 2 + 4
+  const h = tierCount * tierStep + 14
+  const g = new Grid(w, h)
+  const cx = Math.floor(w / 2)
+  const groundY = h - 1
+  const trunkH = 5 + Math.floor(random() * 3)
 
-  // Stacked triangular tiers.
-  const tiers = [
-    { cy: 7, half: 7 },
-    { cy: 13, half: 6 },
-    { cy: 18, half: 5 }
-  ]
+  // Ground shadow.
+  for (let x = -half + 1; x <= half - 1; x += 1) {
+    g.set(cx + x, groundY, palette.shadow)
+  }
 
-  for (const { cy, half } of tiers) {
-    for (let row = 0; row < 7; row += 1) {
-      const width = Math.round((half * 2 + 1) * (row / 6))
-      const startX = 9 - Math.floor(width / 2)
+  g.rect(cx - 1, groundY - trunkH - 1, 2, trunkH, palette.trunkDark)
+
+  const topY = groundY - trunkH - tierCount * tierStep - 4
+
+  for (let tier = 0; tier < tierCount; tier += 1) {
+    const cy = topY + tier * tierStep
+    const tierHalf = Math.round(half * (0.55 + (tier / Math.max(1, tierCount - 1)) * 0.45))
+
+    for (let row = 0; row < tierStep + 4; row += 1) {
+      const width = Math.round((tierHalf * 2 + 1) * Math.min(1, row / (tierStep + 2)))
+      const startX = cx - Math.floor(width / 2)
 
       for (let x = 0; x < width; x += 1) {
-        const shade = row < 2 ? palette.pineLight : row < 5 ? palette.pine : palette.pineDark
-        g.set(startX + x, cy + row - 3, shade)
+        // Light at the sunlit upper-left, dark on the lower-right underside.
+        const edge = x < width * 0.4
+        const band = row < 2 ? 2 : edge ? 1 : 0
+        g.set(startX + x, cy + row, palette.pine[band])
       }
     }
   }
@@ -261,28 +352,48 @@ function pineTree() {
 }
 
 /**
- * A low round bush, optionally flowering.
+ * A low round bush. Size, shape and optional blossoms vary by seed.
  *
- * @param flowering - Whether to dot it with flowers.
+ * @param seed - Variant seed.
+ * @param flowering - Whether to dot it with blossoms.
  * @returns The grid.
  */
-function bush(flowering) {
-  const g = new Grid(16, 12)
+function bush(seed, flowering) {
+  const random = rng(seed)
+  const r = 4 + Math.floor(random() * 3) // 4..6
+  const w = r * 2 + 6
+  const h = r * 2 + 6
+  const g = new Grid(w, h)
+  const cx = Math.floor(w / 2)
+  const groundY = h - 2
 
-  g.disc(8, 8, 6, palette.bushDark)
-  g.disc(6, 7, 4, palette.bushMid)
-  g.disc(10, 8, 4, palette.bushMid)
-  g.disc(8, 6, 3, palette.leafLight)
+  // Shadow.
+  for (let x = -r; x <= r; x += 1) {
+    if ((x * x) / (r * r) <= 0.9) {
+      g.set(cx + x, groundY + 1, palette.shadow)
+    }
+  }
+
+  // Lumpy body from a few discs.
+  const lumps = 2 + Math.floor(random() * 2)
+  g.disc(cx, groundY - r + 1, r, palette.bushDark)
+
+  for (let i = 0; i < lumps; i += 1) {
+    const lx = cx + Math.round((random() - 0.5) * r)
+    const ly = groundY - r + Math.round((random() - 0.5) * r * 0.6)
+    g.disc(lx, ly, r - 1, palette.bushMid)
+  }
+
+  g.disc(cx - 1, groundY - r - 1, r - 2, palette.bushLight)
 
   if (flowering) {
-    for (const [x, y] of [
-      [5, 5],
-      [9, 4],
-      [12, 7],
-      [7, 8],
-      [11, 9]
-    ]) {
-      g.set(x, y, x % 2 === 0 ? palette.flower : palette.flowerAlt)
+    const blooms = 3 + Math.floor(random() * 3)
+    const colors = [palette.flower, palette.flowerAlt, palette.flowerCool]
+
+    for (let i = 0; i < blooms; i += 1) {
+      const bx = cx + Math.round((random() - 0.5) * r * 1.4)
+      const by = groundY - r + Math.round((random() - 0.5) * r)
+      g.set(bx, by, colors[Math.floor(random() * colors.length)])
     }
   }
 
@@ -292,24 +403,24 @@ function bush(flowering) {
 /**
  * A small flower cluster for ground dressing.
  *
+ * @param seed - Variant seed.
  * @returns The grid.
  */
-function flowers() {
-  const g = new Grid(12, 10)
+function flowers(seed) {
+  const random = rng(seed)
+  const g = new Grid(13, 11)
 
   // Foliage base.
-  g.disc(6, 8, 3, palette.bushMid)
+  g.disc(6, 9, 3, palette.bushMid)
+  g.disc(8, 9, 2, palette.bushDark)
 
-  const blooms = [
-    [3, 5],
-    [6, 3],
-    [9, 6],
-    [5, 7],
-    [8, 4]
-  ]
+  const colors = [palette.flower, palette.flowerAlt, palette.flowerCool]
+  const blooms = 4 + Math.floor(random() * 3)
 
-  for (const [x, y] of blooms) {
-    const color = (x + y) % 2 === 0 ? palette.flower : palette.flowerAlt
+  for (let i = 0; i < blooms; i += 1) {
+    const x = 2 + Math.floor(random() * 9)
+    const y = 2 + Math.floor(random() * 5)
+    const color = colors[Math.floor(random() * colors.length)]
     g.set(x, y, color)
     g.set(x, y - 1, color)
     g.set(x - 1, y, color)
@@ -323,13 +434,24 @@ mkdirSync(outDir, { recursive: true })
 
 const scale = 3
 
-const sprites = {
-  'tree-1': deciduousTree(false),
-  'tree-2': deciduousTree(true),
-  'pine-1': pineTree(),
-  'bush-1': bush(false),
-  'bush-2': bush(true),
-  'flowers-1': flowers()
+// Generate several seeded variants of each so the world reads as varied rather
+// than a repeating pattern.
+const sprites = {}
+
+for (let i = 1; i <= 6; i += 1) {
+  sprites[`tree-${i}`] = broadleafTree(i * 7 + 3)
+}
+
+for (let i = 1; i <= 3; i += 1) {
+  sprites[`pine-${i}`] = pineTree(i * 11 + 5)
+}
+
+for (let i = 1; i <= 3; i += 1) {
+  sprites[`bush-${i}`] = bush(i * 5 + 2, i === 3)
+}
+
+for (let i = 1; i <= 2; i += 1) {
+  sprites[`flowers-${i}`] = flowers(i * 13 + 4)
 }
 
 for (const [name, grid] of Object.entries(sprites)) {

@@ -303,11 +303,14 @@ export class VillageScene extends Phaser.Scene {
   private drawObjects(): void {
     for (const placement of this.furnishing.objects) {
       const { x, y } = tileToPixel(placement.column, placement.row)
+      const offsetX = placement.offsetX ?? 0
+      const offsetY = placement.offsetY ?? 0
 
-      const image = this.add.image(x, y + tileSize / 2, placement.sprite)
+      const image = this.add.image(x + offsetX, y + tileSize / 2 + offsetY, placement.sprite)
 
       image.setOrigin(0.5, 1)
-      image.setDepth(placement.row)
+      // Depth follows the visual baseline so jittered objects still sort right.
+      image.setDepth(placement.row + offsetY / tileSize)
     }
   }
 
