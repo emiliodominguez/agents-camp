@@ -273,18 +273,27 @@ export const claudeHarness: HarnessAdapter = {
   id: 'claude',
   isLive: isClaudeLive,
   status: () => {
+    const mode = claudeAuthMode()
+    const live = mode !== 'mock'
     const descriptions: Record<ClaudeAuthMode, string> = {
       'subscription-token': 'live via Claude subscription token',
       'api-key': 'live via Anthropic API key',
       'local-login': 'live via local Claude Code login',
-      mock: 'mock; run `claude login` or set CLAUDE_CODE_OAUTH_TOKEN'
+      mock: 'mock; sign in to Claude Code or set Claude credentials'
     }
 
     return {
       id: 'claude',
       label: harnessById('claude').label,
-      live: isClaudeLive(),
-      detail: descriptions[claudeAuthMode()]
+      live,
+      state: live ? 'live' : 'auth-required',
+      detail: descriptions[mode],
+      help: live
+        ? ['Claude credentials are available to the backend.']
+        : [
+            'Open Claude Code locally and complete its login flow, or set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN.',
+            'Restart the backend with pnpm dev:server, or restart pnpm dev if it owns both processes.'
+          ]
     }
   },
   create: createClaudeSession

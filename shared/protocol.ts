@@ -45,11 +45,15 @@ export interface UsageSnapshot {
 }
 
 /** Runtime availability reported by the backend. */
+export type HarnessRuntimeState = 'live' | 'missing' | 'auth-required' | 'unavailable'
+
 export interface HarnessRuntimeStatus {
   id: AgentHarnessId
   label: string
   live: boolean
+  state: HarnessRuntimeState
   detail: string
+  help: string[]
 }
 
 /** A skill a harness-backed villager can call. */
@@ -104,6 +108,11 @@ export type ChatLine =
       from: 'agent'
       at: number
       question: AgentQuestion
+    }
+  | {
+      kind: 'error'
+      message: string
+      at: number
     }
 
 /** A message sent from the browser to the agent backend. */

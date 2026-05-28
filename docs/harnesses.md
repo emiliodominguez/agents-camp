@@ -45,16 +45,22 @@ Read-only Claude villagers use `Read`, `Glob`, `Grep`, and `AskUserQuestion`.
 
 ### Codex CLI
 
-Live when `codex --version` succeeds, or when `CODEX_BIN` points to an executable that supports the Codex CLI contract.
+Live when the Codex CLI is installed and the backend can see Codex auth:
+
+- `codex` on `PATH`, or `CODEX_BIN` pointing to a Codex executable
+- `~/.codex/auth.json`, `OPENAI_API_KEY`, or `CODEX_API_KEY`
+
+Use `codex doctor` to verify local auth and connectivity when the UI reports Codex as unavailable.
 
 Codex sessions are turn-based:
 
 1. Build a prompt from persona, shared voice, capability scope, recent transcript, and player message.
-2. Run `codex exec` in the villager workspace.
+2. Run `codex exec --json` in the villager workspace.
 3. Read `--output-last-message`.
-4. Stream the final reply back to the UI.
+4. Parse `turn.completed.usage` so input, output, and cached input tokens update the same usage counters as Claude.
+5. Stream the final reply back to the UI.
 
-Full-scope Codex villagers use `--sandbox workspace-write --ask-for-approval never`.
+Full-scope Codex villagers use `codex --ask-for-approval never exec --sandbox workspace-write`.
 Read-only and conversational villagers use `--sandbox read-only`.
 
 ## Skills

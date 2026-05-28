@@ -1,6 +1,6 @@
 import type { Villager } from '../../shared/agents'
 import type { AgentHarnessId } from '../../shared/harnesses'
-import type { AgentStatus } from '../../shared/protocol'
+import type { AgentStatus, HarnessRuntimeState } from '../../shared/protocol'
 
 /**
  * Callbacks an AgentSession uses to report progress back to whoever owns it.
@@ -30,7 +30,9 @@ export interface HarnessRuntime {
   id: AgentHarnessId
   label: string
   live: boolean
+  state: HarnessRuntimeState
   detail: string
+  help: string[]
 }
 
 /** A multi-choice question yielded by an AskUserQuestion-style tool. */

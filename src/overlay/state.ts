@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js'
 import type { Villager } from '../../shared/agents'
 import { defaultHarness, type AgentHarnessId } from '../../shared/harnesses'
 import type { AgentStatus, ChatLine, HarnessRuntimeStatus } from '../../shared/protocol'
+import type { AgentConnectionState } from '../services/agent-client'
 import { villagerById } from '../state/roster'
 
 export type { ChatLine }
@@ -44,6 +45,9 @@ const [awaitingReply, setAwaitingReply] = createSignal(false)
 /** Whether at least one backend harness is live (true) or all harnesses are mocked. */
 const [liveMode, setLiveMode] = createSignal(false)
 
+/** Browser WebSocket state for the agent backend. */
+const [agentConnectionState, setAgentConnectionState] = createSignal<AgentConnectionState>('connecting')
+
 /** Backend runtime availability, keyed by harness. */
 const [harnessStatuses, setHarnessStatuses] = createSignal<HarnessRuntimeStatus[]>([])
 
@@ -64,6 +68,8 @@ export {
   streamingReply,
   awaitingReply,
   liveMode,
+  agentConnectionState,
+  setAgentConnectionState,
   harnessStatuses,
   defaultAgentHarness,
   agentStatuses
@@ -157,6 +163,18 @@ export function appendPlayerLine(text: string): void {
 
   setChatLog((lines) => [...lines, { kind: 'message', from: 'you', text, at: Date.now() }])
   setAwaitingReply(true)
+}
+
+/** Show a backend/harness error inline in the open chat and clear pending reply state. */
+export function recordAgentError(agentId: string, message: string): void {
+  if (chatAgent()?.id !== agentId) {
+    return
+  }
+
+  setChatLog((lines) => [...lines, { kind: 'error', message, at: Date.now() }])
+  setStreamingReply('')
+  setAwaitingReply(false)
+  setAgentStatuses((current) => ({ ...current, [agentId]: 'idle' }))
 }
 
 /**

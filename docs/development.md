@@ -46,6 +46,15 @@ The backend writes state under `.agents/`, which is ignored by git.
 
 Delete `.agents/` to reset local roster, transcripts, usage, and villager workspaces.
 
+## Runtime Troubleshooting
+
+The roster shows backend and harness health. If the browser says the backend is offline, start `pnpm dev` or run `pnpm dev:server` beside an existing Vite server.
+
+If a harness needs login, fix it in a terminal, then restart the backend:
+
+- Claude: sign in through Claude Code, or set `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`.
+- Codex: run `codex login`, or set `OPENAI_API_KEY`; verify with `codex doctor`.
+
 ## Environment
 
 See `.env.example` for all supported options.

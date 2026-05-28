@@ -1,14 +1,15 @@
 import { spawn as spawnProcess, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildSharedVoice, type ToolScope, type Villager } from '../../shared/agents'
 import { harnessById } from '../../shared/harnesses'
-import type { AgentSession, HarnessAdapter, SessionHandlers } from './session-types'
+import type { AgentSession, HarnessAdapter, ResultEvent, SessionHandlers } from './session-types'
 import { streamReply } from './streaming'
 
 type ChatHistoryLine = { from: 'you' | 'agent'; text: string }
+type CodexUsage = Omit<ResultEvent, 'turns' | 'durationMs'>
 
 function commandExists(command: string): boolean {
   const result = spawnSync(command, ['--version'], { stdio: 'ignore' })
@@ -18,6 +19,57 @@ function commandExists(command: string): boolean {
 
 function codexCommand(): string {
   return process.env.CODEX_BIN ?? 'codex'
+}
+
+function codexHome(): string {
+  return process.env.CODEX_HOME ?? join(homedir(), '.codex')
+}
+
+function codexAuthConfigured(): boolean {
+  const apiKey = process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY
+
+  return (typeof apiKey === 'string' && apiKey.trim() !== '') || existsSync(join(codexHome(), 'auth.json'))
+}
+
+function codexHealth(): ReturnType<HarnessAdapter['status']> {
+  const command = codexCommand()
+
+  if (!commandExists(command)) {
+    return {
+      id: 'codex',
+      label: harnessById('codex').label,
+      live: false,
+      state: 'missing',
+      detail: `mock; ${command} is not available`,
+      help: [
+        'Install Codex CLI, for example with npm install -g @openai/codex.',
+        'If Codex is installed somewhere else, set CODEX_BIN to its executable path and restart the backend.'
+      ]
+    }
+  }
+
+  if (!codexAuthConfigured()) {
+    return {
+      id: 'codex',
+      label: harnessById('codex').label,
+      live: false,
+      state: 'auth-required',
+      detail: `mock; ${command} is installed but no Codex auth was found`,
+      help: [
+        'Run codex login in a terminal, or set OPENAI_API_KEY before starting the backend.',
+        'Verify the setup with codex doctor, then restart pnpm dev:server or pnpm dev.'
+      ]
+    }
+  }
+
+  return {
+    id: 'codex',
+    label: harnessById('codex').label,
+    live: true,
+    state: 'live',
+    detail: `live via ${command}`,
+    help: ['Codex CLI is installed and auth was found. Use codex doctor if turns still fail.']
+  }
 }
 
 function sandboxForScope(scope: ToolScope): 'read-only' | 'workspace-write' {
@@ -56,8 +108,73 @@ function buildPrompt(villager: Villager, text: string, history: ChatHistoryLine[
     .join('\n\n')
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function numberField(record: Record<string, unknown>, key: string): number {
+  const value = record[key]
+
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function parseUsage(raw: unknown): CodexUsage | undefined {
+  if (!isRecord(raw)) {
+    return undefined
+  }
+
+  const totalInputTokens = numberField(raw, 'input_tokens')
+  const cachedInputTokens = numberField(raw, 'cached_input_tokens')
+
+  return {
+    // Codex reports cached input as part of input_tokens. Store fresh input and
+    // cache reads separately to match the Claude usage buckets.
+    inputTokens: Math.max(0, totalInputTokens - cachedInputTokens),
+    outputTokens: numberField(raw, 'output_tokens'),
+    cacheCreateTokens: 0,
+    cacheReadTokens: cachedInputTokens
+  }
+}
+
+function parseCodexJsonStream(output: string): { reply: string; usage: CodexUsage | undefined } {
+  let reply = ''
+  let usage: CodexUsage | undefined
+
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim()
+
+    if (trimmed === '') {
+      continue
+    }
+
+    let event: unknown
+
+    try {
+      event = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+
+    if (!isRecord(event)) {
+      continue
+    }
+
+    if (event.type === 'turn.completed') {
+      usage = parseUsage(event.usage)
+    } else if (event.type === 'item.completed' && isRecord(event.item)) {
+      const item = event.item
+
+      if (item.type === 'agent_message' && typeof item.text === 'string') {
+        reply = item.text.trim()
+      }
+    }
+  }
+
+  return { reply, usage }
+}
+
 function isCodexLive(): boolean {
-  return commandExists(codexCommand())
+  return codexHealth().live
 }
 
 function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: string): AgentSession {
@@ -98,12 +215,13 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
     const outputPath = join(tempDir, 'last-message.txt')
     const startedAt = Date.now()
     const args = [
+      '--ask-for-approval',
+      'never',
       'exec',
+      '--json',
       '--skip-git-repo-check',
       '--cd',
       cwd,
-      '--ask-for-approval',
-      'never',
       '--sandbox',
       sandboxForScope(scope),
       '--output-last-message',
@@ -156,6 +274,7 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
         return
       }
 
+      const codexJson = parseCodexJsonStream(stdout.join(''))
       let reply = ''
 
       if (existsSync(outputPath)) {
@@ -163,7 +282,7 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
       }
 
       if (reply === '') {
-        reply = stdout.join('').trim()
+        reply = codexJson.reply
       }
 
       if (reply === '') {
@@ -179,10 +298,10 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
         handlers.onReply(reply)
         handlers.onResult?.({
           turns: 1,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheCreateTokens: 0,
-          cacheReadTokens: 0,
+          inputTokens: codexJson.usage?.inputTokens ?? 0,
+          outputTokens: codexJson.usage?.outputTokens ?? 0,
+          cacheCreateTokens: codexJson.usage?.cacheCreateTokens ?? 0,
+          cacheReadTokens: codexJson.usage?.cacheReadTokens ?? 0,
           durationMs: Date.now() - startedAt
         })
       }
@@ -210,15 +329,6 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
 export const codexHarness: HarnessAdapter = {
   id: 'codex',
   isLive: isCodexLive,
-  status: () => {
-    const live = isCodexLive()
-
-    return {
-      id: 'codex',
-      label: harnessById('codex').label,
-      live,
-      detail: live ? `live via ${codexCommand()}` : 'mock; install or log in to Codex CLI'
-    }
-  },
+  status: codexHealth,
   create: createCodexSession
 }

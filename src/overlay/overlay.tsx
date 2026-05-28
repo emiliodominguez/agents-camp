@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show } from 'solid-js'
+import { createEffect, createSignal, For, onMount, Show } from 'solid-js'
 
 import { activeTheme } from '../themes'
 import {
@@ -15,9 +15,10 @@ import { harnessById, harnessDefinitions, normalizeHarness, type AgentHarnessId 
 import { rosterCollapsed, setRosterCollapsed, villagers } from '../state/roster'
 import { setSkillsOpen, skills, skillsOpen } from '../state/skills'
 import { setUsageOpen, usage, usageOpen } from '../state/usage'
-import type { AgentStatus, ChatLine } from '../../shared/protocol'
+import type { AgentStatus, ChatLine, HarnessRuntimeStatus } from '../../shared/protocol'
 import {
   agentStatuses,
+  agentConnectionState,
   appendPlayerLine,
   awaitingReply,
   chatAgent,
@@ -31,6 +32,7 @@ import {
   nearbyAgent,
   nearbyPlot,
   openChat,
+  recordAgentError,
   setChatAutoExpandInstructions,
   setSpawnOpen,
   spawnOpen,
@@ -62,17 +64,19 @@ export function Overlay() {
 
       <Show when={nearbyAgent()} keyed>
         {(agent) => (
-          <Show when={chatAgent() === undefined && !spawnOpen() && !skillsOpen()}>
-            <div class="panel prompt">
-              Talk to <strong>{agent.name}</strong> — press <kbd>E</kbd>
+          <Show when={chatAgent() === undefined && !spawnOpen() && !skillsOpen() && !usageOpen()}>
+            <div class="panel prompt" role="status" aria-label={`Talk to ${agent.name}. Press E to open chat.`}>
+              Talk to <strong>{agent.name}</strong>
+              <span class="sr-only">Press E to open chat.</span>
             </div>
           </Show>
         )}
       </Show>
 
-      <Show when={nearbyAgent() === undefined && nearbyPlot() !== undefined && !spawnOpen() && !skillsOpen()}>
-        <div class="panel prompt">
-          Spawn a new villager here — press <kbd>E</kbd>
+      <Show when={nearbyAgent() === undefined && nearbyPlot() !== undefined && !spawnOpen() && !skillsOpen() && !usageOpen()}>
+        <div class="panel prompt" role="status" aria-label="Create a villager here. Press E to open the form.">
+          Create a villager here
+          <span class="sr-only">Press E to open the form.</span>
         </div>
       </Show>
 
@@ -134,12 +138,27 @@ function RosterPanel() {
       .filter((harness) => harness.live)
       .map((harness) => harness.label)
 
-  const connectionTitle = (): string =>
-    harnessStatuses()
+  const unavailableHarnesses = () => harnessStatuses().filter((harness) => !harness.live)
+
+  const connectionTitle = (): string => {
+    if (agentConnectionState() !== 'connected') {
+      return 'Agent backend is not connected.'
+    }
+
+    return harnessStatuses()
       .map((harness) => `${harness.label}: ${harness.detail}`)
       .join('\n')
+  }
 
   const connectionText = (): string => {
+    if (agentConnectionState() === 'connecting') {
+      return 'Connecting to backend...'
+    }
+
+    if (agentConnectionState() === 'disconnected') {
+      return 'Backend disconnected'
+    }
+
     const names = liveHarnessNames()
 
     if (names.length === 0) {
@@ -171,7 +190,7 @@ function RosterPanel() {
   }
 
   return (
-    <div class="panel roster" classList={{ collapsed: rosterCollapsed() }}>
+    <div class="panel roster" classList={{ collapsed: rosterCollapsed() }} role="region" aria-labelledby="roster-title">
       <button
         type="button"
         class="roster-header"
@@ -180,8 +199,8 @@ function RosterPanel() {
         aria-label={rosterCollapsed() ? 'Expand roster' : 'Collapse roster'}
       >
         <span class="chevron" aria-hidden="true">{rosterCollapsed() ? '▸' : '▾'}</span>
-        <span class="roster-title">{activeTheme.name}</span>
-        <span class="roster-summary">
+        <span class="roster-title" id="roster-title">{activeTheme.name}</span>
+        <span class="roster-summary" id="roster-summary">
           <Show when={villagers().length > 0} fallback={<>empty</>}>
             {villagers().length} villager{villagers().length === 1 ? '' : 's'}
             <Show when={busyCount() > 0}>
@@ -192,7 +211,15 @@ function RosterPanel() {
             </Show>
           </Show>
         </span>
-        <span class="header-conn" classList={{ live: liveMode() }} title={connectionTitle()} />
+        <span
+          class="header-conn"
+          classList={{
+            live: agentConnectionState() === 'connected' && liveMode(),
+            warn: agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0
+          }}
+          title={connectionTitle()}
+          aria-hidden="true"
+        />
       </button>
 
       <Show when={!rosterCollapsed()}>
@@ -203,7 +230,7 @@ function RosterPanel() {
               <div class="roster-empty">
                 <p>Your camp is empty.</p>
                 <p class="hint">
-                  Walk to a glowing <span class="plus">+</span> and press <kbd>E</kbd> to spawn your own villager, or:
+                  Find a glowing <span class="plus">+</span> plot to spawn your own villager, or:
                 </p>
                 <button type="button" class="roster-seed" onClick={() => sendSeed()}>
                   + Seed starter villagers
@@ -218,6 +245,8 @@ function RosterPanel() {
                 class="harness-filter-button"
                 classList={{ active: harnessFilter() === 'all' }}
                 onClick={() => setHarnessFilter('all')}
+                aria-pressed={harnessFilter() === 'all'}
+                aria-label={`Show all harnesses, ${villagers().length} agents`}
               >
                 <span class="filter-title">All</span>
                 <span class="filter-count">{villagers().length}</span>
@@ -234,9 +263,11 @@ function RosterPanel() {
                       classList={{ active: harnessFilter() === definition.id }}
                       onClick={() => setHarnessFilter(definition.id)}
                       title={`${definition.description}\n${status()?.detail ?? 'status pending'}`}
+                      aria-pressed={harnessFilter() === definition.id}
+                      aria-label={`Show ${definition.label} agents, ${harnessAgentCount(definition.id)} agents, ${live() ? 'live' : 'mock'}`}
                     >
                       <span class="filter-title">
-                        <span class="filter-dot" classList={{ live: live() }} />
+                        <span class="filter-dot" classList={{ live: live() }} aria-hidden="true" />
                         {definition.shortLabel}
                       </span>
                       <span class="filter-count">{harnessAgentCount(definition.id)}</span>
@@ -263,13 +294,24 @@ function RosterPanel() {
               </ul>
             </Show>
 
-            <p class="hint">Walk with WASD or click a villager to talk.</p>
+            <p class="hint">Agents can move between harnesses as their work changes.</p>
           </Show>
 
-          <p class="conn" classList={{ live: liveMode() }}>
-            <span class="conn-dot" />
+          <p
+            class="conn"
+            classList={{
+              live: agentConnectionState() === 'connected' && liveMode(),
+              warn: agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0
+            }}
+            id="roster-runtime-status"
+          >
+            <span class="conn-dot" aria-hidden="true" />
             {connectionText()}
           </p>
+
+          <Show when={agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0}>
+            <RuntimeNotice unavailableHarnesses={unavailableHarnesses()} />
+          </Show>
 
           <div class="roster-actions">
             <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
@@ -280,6 +322,60 @@ function RosterPanel() {
             </button>
           </div>
         </div>
+      </Show>
+    </div>
+  )
+}
+
+function RuntimeNotice(props: { unavailableHarnesses: HarnessRuntimeStatus[] }) {
+  const title = (): string => {
+    if (agentConnectionState() === 'connecting') {
+      return 'Connecting to the agent backend'
+    }
+
+    if (agentConnectionState() === 'disconnected') {
+      return 'Agent backend is offline'
+    }
+
+    return 'Some harnesses need attention'
+  }
+
+  const summary = (): string => {
+    if (agentConnectionState() === 'connecting') {
+      return 'The browser is opening the WebSocket connection. If this stays here, start the backend.'
+    }
+
+    if (agentConnectionState() === 'disconnected') {
+      return 'Run pnpm dev for the full app, or pnpm dev:server if the web server is already running. The browser will reconnect automatically.'
+    }
+
+    return 'Unavailable harnesses fall back to mock replies until their local runtime is installed and authenticated.'
+  }
+
+  return (
+    <div class="runtime-notice" role="status" aria-live="polite">
+      <strong>{title()}</strong>
+      <p>{summary()}</p>
+
+      <Show when={agentConnectionState() === 'connected' && props.unavailableHarnesses.length > 0}>
+        <ul class="runtime-list">
+          <For each={props.unavailableHarnesses}>
+            {(harness) => (
+              <li>
+                <span class="runtime-row-title">
+                  <span class={`runtime-pill ${harness.state}`}>{harness.state.replace('-', ' ')}</span>
+                  {harness.label}
+                </span>
+                <span class="runtime-detail">{harness.detail}</span>
+                <ol>
+                  <For each={harness.help}>
+                    {(step) => <li>{step}</li>}
+                  </For>
+                </ol>
+              </li>
+            )}
+          </For>
+        </ul>
       </Show>
     </div>
   )
@@ -307,7 +403,13 @@ function RosterRow(props: {
 
   return (
     <li class="roster-row" classList={{ [status()]: true }}>
-      <button type="button" class="roster-row-main" onClick={props.onChat} title={`Talk to ${props.villager.name}`}>
+      <button
+        type="button"
+        class="roster-row-main"
+        onClick={props.onChat}
+        title={`Talk to ${props.villager.name}`}
+        aria-label={`Talk to ${props.villager.name}, ${harness().label}, ${statusWord[status()]}`}
+      >
         <span class="roster-avatar" style={{ background: `${props.villager.dotColor}22` }}>
           <Show when={spec()} keyed>
             {(s) => (
@@ -319,7 +421,7 @@ function RosterRow(props: {
               </span>
             )}
           </Show>
-          <span class="roster-dot" style={{ background: props.villager.dotColor }} />
+          <span class="roster-dot" style={{ background: props.villager.dotColor }} aria-hidden="true" />
         </span>
         <span class="roster-row-meta">
           <span class="name-line">
@@ -390,6 +492,7 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
   const [draftHarness, setDraftHarness] = createSignal<AgentHarnessId>(
     normalizeHarness(props.agent.harness ?? defaultAgentHarness())
   )
+  const activeHarness = () => harnessById(normalizeHarness(agent().harness ?? defaultAgentHarness()))
 
   // Consume the auto-expand-instructions hint (set by the roster edit button)
   // exactly once, then clear it so it doesn't leak into the next chat.
@@ -400,6 +503,9 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
   // Ask the server for the saved transcript on open.
   createEffect(() => {
     requestHistory(agentId)
+  })
+
+  onMount(() => {
     queueMicrotask(() => input?.focus())
   })
 
@@ -424,7 +530,10 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
     }
 
     appendPlayerLine(value)
-    sendChat(agentId, value)
+
+    if (!sendChat(agentId, value)) {
+      recordAgentError(agentId, 'The agent backend is not connected. Start it with pnpm dev or pnpm dev:server, then retry.')
+    }
 
     if (input !== undefined) {
       input.value = ''
@@ -444,30 +553,40 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
   }
 
   return (
-    <div class="panel chat">
+    <div class="panel chat" role="dialog" aria-labelledby="chat-title">
       <header>
-        <span class="dot" style={{ background: agent().dotColor }} />
-        <strong>{agent().name}</strong>
-        <span class="harness-badge">{harnessById(normalizeHarness(agent().harness ?? defaultAgentHarness())).shortLabel}</span>
-        <span class="header-status">{statusWord[agentStatuses()[agentId] ?? 'idle']}</span>
-        <button
-          type="button"
-          class="instructions-toggle"
-          onClick={() => setInstructionsOpen((v) => !v)}
-          aria-label="Toggle instructions"
-        >
-          {instructionsOpen() ? '▾ Instructions' : '▸ Instructions'}
-        </button>
-        <button type="button" class="remove" onClick={remove} aria-label="Remove villager">
-          Remove
-        </button>
-        <button type="button" class="close" onClick={closeChat} aria-label="Close chat (Esc)">
-          ✕
-        </button>
+        <span class="chat-agent-summary">
+          <span class="dot" style={{ background: agent().dotColor }} aria-hidden="true" />
+          <span class="chat-agent-copy">
+            <span class="chat-title-row">
+              <strong id="chat-title">{agent().name}</strong>
+              <span class="harness-badge">{activeHarness().shortLabel}</span>
+            </span>
+            <span class="header-status">{activeHarness().label} · {statusWord[agentStatuses()[agentId] ?? 'idle']}</span>
+          </span>
+        </span>
+        <span class="chat-actions">
+          <button
+            type="button"
+            class="instructions-toggle"
+            onClick={() => setInstructionsOpen((v) => !v)}
+            aria-label="Toggle instructions"
+            aria-expanded={instructionsOpen()}
+            aria-controls="chat-instructions"
+          >
+            {instructionsOpen() ? '▾ Instructions' : '▸ Instructions'}
+          </button>
+          <button type="button" class="remove" onClick={remove} aria-label="Remove villager">
+            Remove
+          </button>
+          <button type="button" class="close" onClick={closeChat} aria-label="Close chat">
+            ✕
+          </button>
+        </span>
       </header>
 
       <Show when={instructionsOpen()}>
-        <div class="instructions">
+        <div class="instructions" id="chat-instructions">
           <Show
             when={editing()}
             fallback={
@@ -525,7 +644,14 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
         </div>
       </Show>
 
-      <div class="transcript" ref={(el) => (scroller = el)}>
+      <div
+        class="transcript"
+        ref={(el) => (scroller = el)}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label={`Conversation with ${agent().name}`}
+      >
         <Show when={chatLog().length === 0 && streamingReply() === '' && !awaitingReply()}>
           <p class="empty">Say hello to {agent().name}.</p>
         </Show>
@@ -533,16 +659,16 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
         <For each={chatLog()}>{(line) => <Line line={line} agentName={agent().name} agentId={agentId} />}</For>
 
         <Show when={awaitingReply()}>
-          <div class="line agent thinking">
+          <div class="line message agent thinking" role="status" aria-label={`${agent().name} is thinking`}>
             <span class="meta"><span class="who">{agent().name}</span></span>
             <span class="text">
-              <span class="dots"><span /><span /><span /></span>
+              <span class="dots" aria-hidden="true"><span /><span /><span /></span>
             </span>
           </div>
         </Show>
 
         <Show when={streamingReply() !== ''}>
-          <div class="line agent">
+          <div class="line message agent streaming">
             <span class="meta"><span class="who">{agent().name}</span></span>
             <span class="text">
               {streamingReply()}
@@ -562,8 +688,6 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
         />
         <button type="submit">Send</button>
       </form>
-
-      <p class="chat-hint"><kbd>Esc</kbd> to close</p>
     </div>
   )
 }
@@ -577,10 +701,10 @@ function Line(props: { line: ChatLine; agentName: string; agentId: string }) {
           const line = props.line as Extract<ChatLine, { kind: 'message' }>
 
           return (
-            <div class={`line ${line.from}`}>
+            <div class={`line message ${line.from}`}>
               <span class="meta">
                 <span class="who">{line.from === 'you' ? 'You' : props.agentName}</span>
-                <span class="time">{formatTime(line.at)}</span>
+                <time class="time" dateTime={new Date(line.at).toISOString()}>{formatTime(line.at)}</time>
               </span>
               <span class="text">{line.text}</span>
             </div>
@@ -606,6 +730,22 @@ function Line(props: { line: ChatLine; agentName: string; agentId: string }) {
           const line = props.line as Extract<ChatLine, { kind: 'question' }>
 
           return <QuestionLine line={line} agentName={props.agentName} agentId={props.agentId} />
+        })()}
+      </Show>
+
+      <Show when={props.line.kind === 'error'}>
+        {(() => {
+          const line = props.line as Extract<ChatLine, { kind: 'error' }>
+
+          return (
+            <div class="line error" role="alert">
+              <span class="meta">
+                <span class="who">System</span>
+                <time class="time" dateTime={new Date(line.at).toISOString()}>{formatTime(line.at)}</time>
+              </span>
+              <span class="text">{line.message}</span>
+            </div>
+          )
         })()}
       </Show>
     </>
@@ -669,6 +809,7 @@ function QuestionLine(props: {
                   classList={{ answer: isAnswer(), selected: isSelected() }}
                   disabled={disabled()}
                   onClick={() => pick(option.label)}
+                  aria-pressed={isSelected() || isAnswer()}
                 >
                   <span class="option-label">{option.label}</span>
                   <Show when={option.description}>{(d) => <span class="option-desc">{d()}</span>}</Show>
@@ -743,7 +884,9 @@ function SpawnDialog() {
   const [openTemplateSection, setOpenTemplateSection] = createSignal<string | undefined>(undefined)
   let nameInput: HTMLInputElement | undefined
 
-  queueMicrotask(() => nameInput?.focus())
+  onMount(() => {
+    queueMicrotask(() => nameInput?.focus())
+  })
 
   const characterGroups = groupBy(activeTheme.characters, (c) => c.category)
   const templateGroups = groupBy(personaTemplates, (template) => template.category)
@@ -787,10 +930,10 @@ function SpawnDialog() {
   }
 
   return (
-    <div class="panel spawn">
+    <div class="panel spawn" role="dialog" aria-modal="true" aria-labelledby="spawn-title">
       <header>
-        <strong>Spawn a new villager</strong>
-        <button type="button" class="close" onClick={() => setSpawnOpen(false)} aria-label="Cancel (Esc)">
+        <strong id="spawn-title">Create a new villager</strong>
+        <button type="button" class="close" onClick={() => setSpawnOpen(false)} aria-label="Cancel">
           ✕
         </button>
       </header>
@@ -831,7 +974,7 @@ function SpawnDialog() {
                       <span class="section-title">{categoryLabel[categoryKey]}</span>
                       <span class="section-count">{specs.length}</span>
                     </summary>
-                    <div class="sprite-picker">
+                    <div class="sprite-picker" role="radiogroup" aria-label={`${categoryLabel[categoryKey]} looks`}>
                       <For each={specs}>
                         {(spec) => (
                           <button
@@ -840,6 +983,8 @@ function SpawnDialog() {
                             classList={{ active: sprite() === spec.key }}
                             onClick={() => setSprite(spec.key)}
                             aria-label={spec.label}
+                            aria-checked={sprite() === spec.key}
+                            role="radio"
                             title={spec.label}
                           >
                             <img src={`${spec.pathPrefix}/d${spec.idle.suffix}.png`} alt="" style={{ '--frame-size': `${spec.frameSize}px` }} />
@@ -857,7 +1002,7 @@ function SpawnDialog() {
 
         <fieldset class="spawn-field">
           <legend>Roster colour</legend>
-          <div class="color-picker">
+          <div class="color-picker" role="radiogroup" aria-label="Roster color">
             <For each={dotColorPalette}>
               {(color) => (
                 <button
@@ -866,7 +1011,9 @@ function SpawnDialog() {
                   classList={{ active: dotColor() === color }}
                   style={{ background: color }}
                   onClick={() => setDotColor(color)}
-                  aria-label={`Colour ${color}`}
+                  aria-label={`Color ${color}`}
+                  aria-checked={dotColor() === color}
+                  role="radio"
                 />
               )}
             </For>
@@ -875,7 +1022,7 @@ function SpawnDialog() {
 
         <fieldset class="spawn-field">
           <legend>Harness</legend>
-          <div class="scope-picker">
+          <div class="scope-picker" role="radiogroup" aria-label="Harness">
             <For each={harnessDefinitions}>
               {(definition) => (
                 <ScopeOption
@@ -892,7 +1039,7 @@ function SpawnDialog() {
 
         <fieldset class="spawn-field">
           <legend>Capabilities</legend>
-          <div class="scope-picker">
+          <div class="scope-picker" role="radiogroup" aria-label="Capabilities">
             <ScopeOption
               value="conversational"
               label="Conversational"
@@ -943,6 +1090,7 @@ function SpawnDialog() {
                             class="template-option"
                             onClick={() => applyTemplate(template.id)}
                             title={template.role}
+                            aria-label={`Use ${template.name} template`}
                           >
                             {template.name}
                           </button>
@@ -968,7 +1116,7 @@ function SpawnDialog() {
           <button type="button" class="secondary" onClick={() => setSpawnOpen(false)}>
             Cancel
           </button>
-          <button type="submit">Spawn villager</button>
+          <button type="submit">Create villager</button>
         </div>
       </form>
     </div>
@@ -989,7 +1137,8 @@ function ScopeOption(props: {
       class="scope-option"
       classList={{ active: props.checked }}
       onClick={props.onSelect}
-      aria-pressed={props.checked}
+      role="radio"
+      aria-checked={props.checked}
     >
       <span class="scope-radio" aria-hidden="true" />
       <span class="scope-meta">
@@ -1037,16 +1186,16 @@ function SpritePreview(props: {
 /** Skills panel — list every skill the villagers can call. */
 function SkillsPanel() {
   return (
-    <div class="panel skills">
+    <div class="panel skills" role="dialog" aria-modal="true" aria-labelledby="skills-title" aria-describedby="skills-hint">
       <header>
-        <strong>Skills</strong>
+        <strong id="skills-title">Skills</strong>
         <span class="skills-count">{skills().length} available</span>
-        <button type="button" class="close" onClick={() => setSkillsOpen(false)} aria-label="Close (Esc)">
+        <button type="button" class="close" onClick={() => setSkillsOpen(false)} aria-label="Close skills">
           ✕
         </button>
       </header>
 
-      <p class="skills-hint">
+      <p class="skills-hint" id="skills-hint">
         Skills are grouped by the harness that can see them. Claude and Codex read separate skill folders.
       </p>
 
@@ -1076,7 +1225,7 @@ function formatTokens(n: number): string {
 /** Format ms-ago as "just now" / "5m ago" / "2h ago" / "Mon HH:MM". */
 function formatAgo(at: number | undefined): string {
   if (at === undefined) {
-    return '—'
+    return '-'
   }
 
   const seconds = Math.floor((Date.now() - at) / 1000)
@@ -1092,18 +1241,20 @@ function formatAgo(at: number | undefined): string {
 /** API usage panel — per-villager tokens and turns, plus camp totals. */
 function UsagePanel() {
   return (
-    <div class="panel usage">
+    <div class="panel usage" role="dialog" aria-modal="true" aria-labelledby="usage-title" aria-describedby="usage-subtitle">
       <header>
-        <strong>Harness usage</strong>
-        <span class="usage-subtitle">Turn and token counts reported by each runtime.</span>
-        <button type="button" class="close" onClick={() => setUsageOpen(false)} aria-label="Close (Esc)">
+        <span class="usage-heading">
+          <strong id="usage-title">Harness usage</strong>
+          <span class="usage-subtitle" id="usage-subtitle">Turn and token counts reported by each runtime.</span>
+        </span>
+        <button type="button" class="close" onClick={() => setUsageOpen(false)} aria-label="Close usage">
           ✕
         </button>
       </header>
 
       <Show
         when={usage() && (usage()?.villagers.length ?? 0) > 0}
-        fallback={<p class="usage-empty">No usage yet — talk to a villager to start counting.</p>}
+        fallback={<p class="usage-empty">No usage yet - talk to a villager to start counting.</p>}
       >
         {(() => {
           const snapshot = usage() as NonNullable<ReturnType<typeof usage>>
@@ -1124,7 +1275,7 @@ function UsagePanel() {
                   <span class="usage-stat-value">{formatTokens(snapshot.totals.outputTokens)}</span>
                 </div>
                 <div class="usage-stat">
-                  <span class="usage-stat-label">Cache create</span>
+                  <span class="usage-stat-label">Cache new</span>
                   <span class="usage-stat-value">{formatTokens(snapshot.totals.cacheCreateTokens)}</span>
                 </div>
                 <div class="usage-stat">
@@ -1137,22 +1288,38 @@ function UsagePanel() {
                 <For each={snapshot.villagers}>
                   {(entry) => (
                     <li>
-                      <div class="usage-name">
-                        {entry.name}
-                        <span class="usage-harness">{harnessById(normalizeHarness(entry.harness)).shortLabel}</span>
+                      <div class="usage-entry-top">
+                        <div class="usage-name">
+                          <span class="usage-agent-name">{entry.name}</span>
+                          <span class="usage-harness">{harnessById(normalizeHarness(entry.harness)).shortLabel}</span>
+                        </div>
+                        <span class="usage-ago">{formatAgo(entry.lastActiveAt)}</span>
                       </div>
                       <div class="usage-meta">
-                        <span>{entry.turns} turn{entry.turns === 1 ? '' : 's'}</span>
-                        <span class="usage-dot">·</span>
-                        <span title="input tokens">↑ {formatTokens(entry.inputTokens)}</span>
-                        <span class="usage-dot">·</span>
-                        <span title="output tokens">↓ {formatTokens(entry.outputTokens)}</span>
-                        <Show when={entry.cacheReadTokens > 0}>
-                          <span class="usage-dot">·</span>
-                          <span title="cache read">⚡ {formatTokens(entry.cacheReadTokens)}</span>
+                        <span class="usage-metric">
+                          <span class="usage-metric-label">Turns</span>
+                          <span class="usage-metric-value">{entry.turns}</span>
+                        </span>
+                        <span class="usage-metric" title="Input tokens">
+                          <span class="usage-metric-label">Input</span>
+                          <span class="usage-metric-value">{formatTokens(entry.inputTokens)}</span>
+                        </span>
+                        <span class="usage-metric" title="Output tokens">
+                          <span class="usage-metric-label">Output</span>
+                          <span class="usage-metric-value">{formatTokens(entry.outputTokens)}</span>
+                        </span>
+                        <Show when={entry.cacheCreateTokens > 0}>
+                          <span class="usage-metric" title="Cache create tokens">
+                            <span class="usage-metric-label">Cache new</span>
+                            <span class="usage-metric-value">{formatTokens(entry.cacheCreateTokens)}</span>
+                          </span>
                         </Show>
-                        <span class="usage-dot">·</span>
-                        <span class="usage-ago">{formatAgo(entry.lastActiveAt)}</span>
+                        <Show when={entry.cacheReadTokens > 0}>
+                          <span class="usage-metric" title="Cache read tokens">
+                            <span class="usage-metric-label">Cache read</span>
+                            <span class="usage-metric-value">{formatTokens(entry.cacheReadTokens)}</span>
+                          </span>
+                        </Show>
                       </div>
                     </li>
                   )}

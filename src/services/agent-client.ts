@@ -28,6 +28,9 @@ type ToolListener = (agentId: string, tool: { name: string; input: unknown; summ
 type QuestionListener = (agentId: string, question: AgentQuestion) => void
 type SkillsListener = (skills: SkillSummary[]) => void
 type UsageListener = (usage: UsageSnapshot) => void
+export type AgentConnectionState = 'connecting' | 'connected' | 'disconnected'
+type ConnectionListener = (state: AgentConnectionState) => void
+type ErrorListener = (agentId: string, message: string) => void
 
 const statusListeners = new Set<StatusListener>()
 const tokenListeners = new Set<TokenListener>()
@@ -41,9 +44,17 @@ const toolListeners = new Set<ToolListener>()
 const questionListeners = new Set<QuestionListener>()
 const skillsListeners = new Set<SkillsListener>()
 const usageListeners = new Set<UsageListener>()
+const connectionListeners = new Set<ConnectionListener>()
+const errorListeners = new Set<ErrorListener>()
 
 let socket: WebSocket | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+
+function notifyConnection(state: AgentConnectionState): void {
+  for (const listener of connectionListeners) {
+    listener(state)
+  }
+}
 
 function socketUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -52,8 +63,14 @@ function socketUrl(): string {
 }
 
 function connect(): void {
+  notifyConnection('connecting')
+
   const ws = new WebSocket(socketUrl())
   socket = ws
+
+  ws.addEventListener('open', () => {
+    notifyConnection('connected')
+  })
 
   ws.addEventListener('message', (event) => {
     let message: ServerMessage
@@ -112,11 +129,16 @@ function connect(): void {
       for (const listener of usageListeners) {
         listener(message.usage)
       }
+    } else if (message.type === 'error') {
+      for (const listener of errorListeners) {
+        listener(message.agentId, message.message)
+      }
     }
   })
 
   ws.addEventListener('close', () => {
     socket = undefined
+    notifyConnection('disconnected')
 
     if (reconnectTimer === undefined) {
       reconnectTimer = setTimeout(() => {
@@ -132,12 +154,14 @@ function connect(): void {
 }
 
 /** Send a typed client message if the socket is open. */
-function sendMessage(message: ClientMessage): void {
+function sendMessage(message: ClientMessage): boolean {
   if (socket === undefined || socket.readyState !== WebSocket.OPEN) {
-    return
+    return false
   }
 
   socket.send(JSON.stringify(message))
+
+  return true
 }
 
 /** Open the connection (idempotent). Call once at startup. */
@@ -153,8 +177,8 @@ export function startAgentClient(): void {
  * @param agentId - The villager being addressed.
  * @param text - The player's message.
  */
-export function sendChat(agentId: string, text: string): void {
-  sendMessage({ type: 'chat', agentId, text })
+export function sendChat(agentId: string, text: string): boolean {
+  return sendMessage({ type: 'chat', agentId, text })
 }
 
 /**
@@ -291,4 +315,16 @@ export function onUsage(listener: UsageListener): () => void {
   usageListeners.add(listener)
 
   return () => usageListeners.delete(listener)
+}
+
+export function onConnectionChange(listener: ConnectionListener): () => void {
+  connectionListeners.add(listener)
+
+  return () => connectionListeners.delete(listener)
+}
+
+export function onAgentError(listener: ErrorListener): () => void {
+  errorListeners.add(listener)
+
+  return () => errorListeners.delete(listener)
 }

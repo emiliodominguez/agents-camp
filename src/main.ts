@@ -5,11 +5,13 @@ import './styles.css'
 
 import {
   onAgentHello,
+  onAgentError,
   onAgentQuestion,
   onAgentReply,
   onAgentStatus,
   onAgentTool,
   onAgentToken,
+  onConnectionChange,
   onHistory,
   onRemoved,
   onRoster,
@@ -25,7 +27,9 @@ import {
   chatAgent,
   closeChat,
   commitAgentReply,
+  recordAgentError,
   recordAgentStatus,
+  setAgentConnectionState,
   setBackendStatus,
   setChatHistory,
   setSpawnOpen,
@@ -64,11 +68,13 @@ if (overlayRoot !== null) {
 
 // Connect to the agent backend and route its stream into the overlay state.
 onAgentHello((hello) => setBackendStatus(hello))
+onConnectionChange((state) => setAgentConnectionState(state))
 onAgentStatus((agentId, status) => recordAgentStatus(agentId, status))
 onAgentToken((agentId, text) => appendAgentToken(agentId, text))
 onAgentReply((agentId, text) => commitAgentReply(agentId, text))
 onAgentTool((agentId, tool) => appendAgentTool(agentId, tool))
 onAgentQuestion((agentId, question) => appendAgentQuestion(agentId, question))
+onAgentError((agentId, message) => recordAgentError(agentId, message))
 onRoster((villagers) => setRoster(villagers))
 onSpawned((villager) => addVillager(villager))
 onRemoved((agentId) => removeVillager(agentId))

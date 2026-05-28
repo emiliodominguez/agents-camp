@@ -33,7 +33,12 @@ export function harnessStatuses(): HarnessRuntime[] {
       id: definition.id,
       label: definition.label,
       live: false,
-      detail: 'mock; no server adapter is registered'
+      state: 'missing',
+      detail: 'mock; no server adapter is registered',
+      help: [
+        `Add server/harnesses/${definition.id}-session.ts and register it in server/harnesses/index.ts.`,
+        'Restart the backend after adding the adapter.'
+      ]
     }
   })
 }
