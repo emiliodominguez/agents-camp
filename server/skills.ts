@@ -3,19 +3,23 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import type { AgentHarnessId } from '../shared/harnesses'
 import type { SkillSummary } from '../shared/protocol'
 
 /**
- * Enumerate the skills available to the villagers (their Skill tool calls).
- * Reads `~/.claude/skills` (user) and `<repo>/.claude/skills` (project), each
- * folder being one skill; the SKILL.md or first markdown file's frontmatter
- * gives the description.
+ * Enumerate skills available to harness-backed villagers. Claude and Codex
+ * keep skills in different home/project folders, so this reader tags each
+ * summary with the harness it came from.
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(here, '..')
-const userSkillsDir = join(homedir(), '.claude', 'skills')
-const projectSkillsDir = join(projectRoot, '.claude', 'skills')
+const skillRoots: Array<{ harness: AgentHarnessId; source: 'user' | 'project'; dir: string }> = [
+  { harness: 'claude', source: 'project', dir: join(projectRoot, '.claude', 'skills') },
+  { harness: 'claude', source: 'user', dir: join(homedir(), '.claude', 'skills') },
+  { harness: 'codex', source: 'project', dir: join(projectRoot, '.codex', 'skills') },
+  { harness: 'codex', source: 'user', dir: join(homedir(), '.codex', 'skills') }
+]
 
 /**
  * Extract a one-line description from a skill markdown file's frontmatter
@@ -49,10 +53,11 @@ function extractDescription(markdown: string): string {
  * containing at least one markdown file.
  *
  * @param dir - The skills directory.
+ * @param harness - Runtime the directory belongs to.
  * @param source - Where these skills come from (for display).
  * @returns The summaries.
  */
-function readSkills(dir: string, source: 'user' | 'project'): SkillSummary[] {
+function readSkills(dir: string, harness: AgentHarnessId, source: 'user' | 'project'): SkillSummary[] {
   if (!existsSync(dir)) {
     return []
   }
@@ -84,7 +89,7 @@ function readSkills(dir: string, source: 'user' | 'project'): SkillSummary[] {
 
     try {
       const description = extractDescription(readFileSync(fullPath, 'utf8'))
-      skills.push({ name: entry, source, description })
+      skills.push({ harness, name: entry, source, description })
     } catch {
       // Unreadable skill — skip.
     }
@@ -99,5 +104,5 @@ function readSkills(dir: string, source: 'user' | 'project'): SkillSummary[] {
  * @returns Skill summaries, sorted by name within each source.
  */
 export async function listSkills(): Promise<SkillSummary[]> {
-  return [...readSkills(projectSkillsDir, 'project'), ...readSkills(userSkillsDir, 'user')]
+  return skillRoots.flatMap((root) => readSkills(root.dir, root.harness, root.source))
 }

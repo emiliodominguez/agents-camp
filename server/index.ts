@@ -3,8 +3,9 @@ import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 
 import { defaultSeed, dotColorPalette, type Villager } from '../shared/agents'
+import { normalizeHarness } from '../shared/harnesses'
 import type { ClientMessage, ServerMessage, UsageSnapshot, VillagerUsage } from '../shared/protocol'
-import { authMode, createSession, isLive, type AgentSession } from './agentSession'
+import { createSession, defaultAgentHarness, harnessStatuses, isLive, type AgentSession } from './harnesses'
 import { listSkills } from './skills'
 import {
   appendTranscriptLine,
@@ -19,12 +20,11 @@ import {
   saveUsage
 } from './storage'
 
-// Load a local .env (for CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY) if
-// present; harmless if absent.
+// Load a local .env (for harness credentials/config) if present; harmless if absent.
 try {
   process.loadEnvFile()
 } catch {
-  // No .env file — run on the local Claude login or in mock mode.
+  // No .env file — harness adapters fall back to local credentials or mock mode.
 }
 
 const port = Number(process.env.AGENT_PORT ?? 8787)
@@ -32,7 +32,7 @@ const port = Number(process.env.AGENT_PORT ?? 8787)
 const httpServer = createServer((request, response) => {
   if (request.url === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ ok: true, live: isLive(), villagers: roster.length }))
+    response.end(JSON.stringify({ ok: true, live: isLive(), harnesses: harnessStatuses(), villagers: roster.length }))
 
     return
   }
@@ -44,14 +44,24 @@ const httpServer = createServer((request, response) => {
 const webSocketServer = new WebSocketServer({ server: httpServer, path: '/agents' })
 
 /** The current roster, loaded once on boot; saves on every mutation. */
-let roster: Villager[] = loadRoster()
+let roster: Villager[] = loadRoster().map((villager) => ({
+  ...villager,
+  harness: normalizeHarness(villager.harness ?? defaultAgentHarness())
+}))
 
 /** All-time per-villager usage, keyed by agentId. Persisted on every update. */
 const usage = loadUsage()
 
 /** Build the wire snapshot from the in-memory usage map. */
 function usageSnapshot(): UsageSnapshot {
-  const villagers: VillagerUsage[] = [...usage.values()]
+  const villagers: VillagerUsage[] = [...usage.values()].map((entry) => {
+    const villager = roster.find((candidate) => candidate.id === entry.agentId)
+
+    return {
+      ...entry,
+      harness: normalizeHarness(villager?.harness ?? entry.harness ?? defaultAgentHarness())
+    }
+  })
   const totals = villagers.reduce(
     (accumulator, entry) => ({
       turns: accumulator.turns + entry.turns,
@@ -183,6 +193,7 @@ webSocketServer.on('connection', (socket) => {
           const current = usage.get(agentId) ?? {
             agentId,
             name: villager.name,
+            harness: normalizeHarness(villager.harness ?? defaultAgentHarness()),
             turns: 0,
             inputTokens: 0,
             outputTokens: 0,
@@ -193,6 +204,7 @@ webSocketServer.on('connection', (socket) => {
           const updated: VillagerUsage = {
             ...current,
             name: villager.name,
+            harness: normalizeHarness(villager.harness ?? defaultAgentHarness()),
             turns: current.turns + event.turns,
             inputTokens: current.inputTokens + event.inputTokens,
             outputTokens: current.outputTokens + event.outputTokens,
@@ -215,7 +227,12 @@ webSocketServer.on('connection', (socket) => {
     return session
   }
 
-  send(socket, { type: 'hello', live: isLive() })
+  send(socket, {
+    type: 'hello',
+    live: isLive(),
+    harnesses: harnessStatuses(),
+    defaultHarness: defaultAgentHarness()
+  })
   send(socket, { type: 'roster', villagers: roster })
   send(socket, { type: 'usage', usage: usageSnapshot() })
 
@@ -276,6 +293,7 @@ webSocketServer.on('connection', (socket) => {
         dotColor: parsed.dotColor ?? pickDotColor(),
         // New villagers get a tent so spawning is light-weight.
         structure: 'tent-1',
+        harness: normalizeHarness(parsed.harness ?? defaultAgentHarness()),
         persona: `You are ${name}. ${personaText}`,
         toolScope: parsed.toolScope ?? 'full'
       }
@@ -318,6 +336,7 @@ webSocketServer.on('connection', (socket) => {
       const updated: Villager = {
         ...target,
         name: parsed.name?.trim() !== '' && parsed.name !== undefined ? parsed.name.trim() : target.name,
+        harness: normalizeHarness(parsed.harness ?? target.harness ?? defaultAgentHarness()),
         persona:
           parsed.persona?.trim() !== '' && parsed.persona !== undefined ? parsed.persona.trim() : target.persona
       }
@@ -363,14 +382,10 @@ webSocketServer.on('connection', (socket) => {
 })
 
 httpServer.listen(port, () => {
-  const description: Record<ReturnType<typeof authMode>, string> = {
-    'subscription-token': 'live — Claude subscription token',
-    'api-key': 'live — Anthropic API key',
-    'local-login': 'live — local Claude Code login (your subscription)',
-    mock: 'mock — no credentials (run `claude login` or set CLAUDE_CODE_OAUTH_TOKEN)'
-  }
   // eslint-disable-next-line no-console
-  console.log(`agent backend listening on ws://localhost:${port}/agents — ${description[authMode()]}`)
+  console.log(`agent backend listening on ws://localhost:${port}/agents`)
+  // eslint-disable-next-line no-console
+  console.log(`harnesses: ${harnessStatuses().map((harness) => `${harness.label}: ${harness.detail}`).join('; ')}`)
   // eslint-disable-next-line no-console
   console.log(`storage: ${describeStorage()}`)
 })

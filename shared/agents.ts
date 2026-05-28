@@ -1,12 +1,11 @@
+import { defaultHarness, harnessById, type AgentHarnessId } from './harnesses'
+
 /**
  * Shared villager types and seed data. The runtime roster lives on the server
  * (file-backed) and is broadcast to clients over the WebSocket; this module
  * only describes the *shape* of a villager and the default starter set used
  * when no saved roster exists yet.
  */
-
-/** Lifecycle state of a villager, surfaced as a status bubble. */
-export type VillagerStatus = 'idle' | 'working' | 'talking'
 
 /** What capabilities a villager has — drives which SDK tools they can call. */
 export type ToolScope = 'conversational' | 'read-only' | 'full'
@@ -25,7 +24,9 @@ export interface Villager {
   dotColor: string
   /** Sprite key for the home placed above them (theme `agentStructures`). */
   structure: string
-  /** Role persona used as the Claude system prompt. */
+  /** Runtime that powers this villager. Old saved villagers default to Claude. */
+  harness?: AgentHarnessId
+  /** Role persona used as the harness system/developer prompt. */
   persona: string
   /** What this villager can do — defaults to 'full' for backwards compatibility. */
   toolScope?: ToolScope
@@ -37,14 +38,21 @@ export interface Villager {
  * tools they actually have.
  *
  * @param scope - The villager's tool scope (default 'full').
+ * @param harness - Runtime this voice is being used with.
  * @returns The shared voice text.
  */
-export function buildSharedVoice(scope: ToolScope = 'full'): string {
+export function buildSharedVoice(scope: ToolScope = 'full', harness: AgentHarnessId = defaultHarness): string {
+  const harnessLabel = harnessById(harness).label
+  const decisionInstruction =
+    harness === 'claude'
+      ? 'When you need a decision from the player, call AskUserQuestion with clear option labels. '
+      : 'When you need a decision from the player, ask a concise question with clear options. '
   const base =
     'You are a villager in a small medieval camp of AI coding agents. ' +
-    'Speak in first person and stay in character. When you need a decision ' +
-    'from the player, call AskUserQuestion with clear option labels. Default to ' +
-    'short in-character replies for casual chat.'
+    `You are powered by the ${harnessLabel} harness. ` +
+    'Speak in first person and stay in character. ' +
+    decisionInstruction +
+    'Default to short in-character replies for casual chat.'
 
   if (scope === 'conversational') {
     return `${base} You are conversational only — you have no file or shell tools.`
@@ -62,13 +70,12 @@ export function buildSharedVoice(scope: ToolScope = 'full'): string {
   return (
     `${base} You are also a fully capable coding agent: you have your own private ` +
     'workspace directory (your current working directory) and can read, edit, write, ' +
-    'run shell commands, search files, and invoke any installed skill via the Skill ' +
-    'tool. Use tools whenever they help — keep prose brief and let the work speak.'
+    'run shell commands, and search files. Use tools whenever they help — keep prose ' +
+    (harness === 'claude'
+      ? 'brief and invoke installed Claude skills via the Skill tool when useful.'
+      : 'brief and let the work speak.')
   )
 }
-
-/** Default shared voice (full scope) for back-compat. */
-export const sharedVoice = buildSharedVoice('full')
 
 /**
  * The starter villagers seeded into the roster on first run. After that, the
@@ -85,6 +92,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-1',
       dotColor: '#7c9cff',
       structure: 'house-1',
+      harness: 'claude',
       persona: 'You are the Planner. You break work into clear steps and think before acting.'
     },
     {
@@ -94,6 +102,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-2',
       dotColor: '#6bd6a4',
       structure: 'tent-1',
+      harness: 'codex',
       persona: 'You are the Builder. You are practical and eager to implement things.'
     },
     {
@@ -103,6 +112,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-3',
       dotColor: '#f0a868',
       structure: 'house-2',
+      harness: 'claude',
       persona: 'You are the Reviewer. You are careful, a little skeptical, and look for problems.'
     },
     {
@@ -112,6 +122,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-4',
       dotColor: '#d58cf0',
       structure: 'tent-2',
+      harness: 'claude',
       persona: 'You are the Explorer. You are curious and like to investigate and ask questions.'
     }
   ]

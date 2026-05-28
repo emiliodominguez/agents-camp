@@ -12,12 +12,14 @@ import type { Villager } from '../../shared/agents'
 const [villagers, setVillagers] = createSignal<Villager[]>([])
 
 /** localStorage key for the roster panel's collapsed state. */
-const rosterCollapsedKey = 'claude-office:roster-collapsed'
+const rosterCollapsedKey = 'agents-camp:roster-collapsed'
+/** Migration fallback for users who had the panel collapsed before the rename. */
+const legacyRosterCollapsedKey = 'claude-office:roster-collapsed'
 
 /** Initialise from localStorage so collapse state survives reloads. */
 function loadInitialCollapsed(): boolean {
   try {
-    return window.localStorage.getItem(rosterCollapsedKey) === '1'
+    return window.localStorage.getItem(rosterCollapsedKey) === '1' || window.localStorage.getItem(legacyRosterCollapsedKey) === '1'
   } catch {
     return false
   }

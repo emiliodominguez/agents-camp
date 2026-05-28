@@ -1,7 +1,8 @@
 import { createSignal } from 'solid-js'
 
 import type { Villager } from '../../shared/agents'
-import type { AgentStatus, ChatLine } from '../../shared/protocol'
+import { defaultHarness, type AgentHarnessId } from '../../shared/harnesses'
+import type { AgentStatus, ChatLine, HarnessRuntimeStatus } from '../../shared/protocol'
 import { villagerById } from '../state/roster'
 
 export type { ChatLine }
@@ -40,8 +41,14 @@ const [streamingReply, setStreamingReply] = createSignal('')
 /** True between sending a message and the first reply token (the "thinking" state). */
 const [awaitingReply, setAwaitingReply] = createSignal(false)
 
-/** Whether the backend is running real Claude (true) or the mock (false). */
+/** Whether at least one backend harness is live (true) or all harnesses are mocked. */
 const [liveMode, setLiveMode] = createSignal(false)
+
+/** Backend runtime availability, keyed by harness. */
+const [harnessStatuses, setHarnessStatuses] = createSignal<HarnessRuntimeStatus[]>([])
+
+/** Default harness used by the backend for new or legacy villagers. */
+const [defaultAgentHarness, setDefaultAgentHarness] = createSignal<AgentHarnessId>(defaultHarness)
 
 /** Live status per villager id, for the roster HUD. */
 const [agentStatuses, setAgentStatuses] = createSignal<Record<string, AgentStatus>>({})
@@ -57,8 +64,20 @@ export {
   streamingReply,
   awaitingReply,
   liveMode,
-  setLiveMode,
+  harnessStatuses,
+  defaultAgentHarness,
   agentStatuses
+}
+
+/** Record backend runtime status from the WebSocket hello message. */
+export function setBackendStatus(status: {
+  live: boolean
+  harnesses: HarnessRuntimeStatus[]
+  defaultHarness: AgentHarnessId
+}): void {
+  setLiveMode(status.live)
+  setHarnessStatuses(status.harnesses)
+  setDefaultAgentHarness(status.defaultHarness)
 }
 
 /**

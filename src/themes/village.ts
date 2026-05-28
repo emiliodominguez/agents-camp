@@ -1,19 +1,20 @@
-import { emptyPlots, officeColumns, officeRows, playerSpawn, seedVillagers } from '../world'
+import { emptyPlots, campColumns, campRows, playerSpawn, seedVillagers } from '../game/world'
 import type { CharacterSpec, ObjectSprite, Placement, Theme } from './types'
 
 /**
  * A medieval-village camp built from the CraftPix "Free Village / Top-Down
  * Defense" pack: a grass field crossed by worn dirt roads that wander in from
- * the edges of the world, with houses and tents the agents live beside and the
- * pack's crafting-and-market props (wood piles, anvils, barrels, market signs,
- * lamp posts, rocks) scattered for a lived-in feel. Kenney roguelike characters
- * stand in for the villagers until a matching pack lands.
+ * the edges of the world, with houses and tents the agents live beside. It is
+ * dressed with matching CraftPix field foliage and camp props so the scene
+ * reads as an occupied village clearing instead of a defensive obstacle course.
  *
  * Tiles are 32px. Object sprites are placed at native size, anchored by their
  * bottom centre.
  */
 
 const objectsBase = '/assets/themes/village/objects'
+
+type ObjectAnimation = NonNullable<ObjectSprite['animation']>
 
 /**
  * Define an object sprite.
@@ -22,14 +23,21 @@ const objectsBase = '/assets/themes/village/objects'
  * @param path - Path under the objects folder (without extension).
  * @param width - Footprint width in tiles (0 to not block).
  * @param height - Footprint height in tiles (0 to not block).
+ * @param animation - Optional looping sprite-strip metadata.
  * @returns The object sprite spec.
  */
-function sprite(key: string, path: string, width: number, height: number): ObjectSprite {
-  return {
+function sprite(key: string, path: string, width: number, height: number, animation?: ObjectAnimation): ObjectSprite {
+  const spec: ObjectSprite = {
     key,
     path: `${objectsBase}/${path}.png`,
     footprint: { width, height }
   }
+
+  if (animation !== undefined) {
+    spec.animation = animation
+  }
+
+  return spec
 }
 
 const spriteList: ObjectSprite[] = [
@@ -57,35 +65,82 @@ const spriteList: ObjectSprite[] = [
   sprite('barrel-2', 'box/2', 1, 1),
   sprite('crate', 'box/3', 1, 1),
   sprite('crate-2', 'box/4', 1, 1),
-  // Rocks — bigger ones block, pebbles do not.
-  sprite('rock-big', 'stone/1', 1, 1),
-  sprite('rock', 'stone/3', 1, 1),
-  sprite('pebble-1', 'stone/4', 0, 0),
-  sprite('pebble-2', 'stone/5', 0, 0),
-  // Grass tufts and flowers are decoration only — they never block movement.
-  sprite('tuft-1', 'grass/2', 0, 0),
-  sprite('tuft-2', 'grass/4', 0, 0),
-  sprite('tuft-3', 'grass/6', 0, 0),
-  sprite('tuft-4', 'grass/1', 0, 0),
-  sprite('tuft-5', 'grass/3', 0, 0),
-  sprite('tuft-6', 'grass/5', 0, 0),
-  // Trees and vegetation (generated; warm palette, several seeded variants).
-  // Trees and pines block at their trunk; bushes block lightly; flowers are
-  // decoration.
-  sprite('tree-1', 'foliage/tree-1', 1, 1),
-  sprite('tree-2', 'foliage/tree-2', 1, 1),
-  sprite('tree-3', 'foliage/tree-3', 1, 1),
-  sprite('tree-4', 'foliage/tree-4', 1, 1),
-  sprite('tree-5', 'foliage/tree-5', 1, 1),
-  sprite('tree-6', 'foliage/tree-6', 1, 1),
-  sprite('pine-1', 'foliage/pine-1', 1, 1),
-  sprite('pine-2', 'foliage/pine-2', 1, 1),
-  sprite('pine-3', 'foliage/pine-3', 1, 1),
-  sprite('bush-1', 'foliage/bush-1', 1, 1),
-  sprite('bush-2', 'foliage/bush-2', 1, 1),
-  sprite('bush-3', 'foliage/bush-3', 1, 1),
-  sprite('flowers-1', 'foliage/flowers-1', 0, 0),
-  sprite('flowers-2', 'foliage/flowers-2', 0, 0)
+  // Field-pack stones — bigger ones block, pebbles do not.
+  sprite('rock-big', 'field/stone/11', 1, 1),
+  sprite('rock', 'field/stone/8', 1, 1),
+  sprite('pebble-1', 'field/stone/1', 0, 0),
+  sprite('pebble-2', 'field/stone/3', 0, 0),
+  sprite('stone-cluster-1', 'field/stone/10', 1, 1),
+  sprite('stone-cluster-2', 'field/stone/12', 1, 1),
+  sprite('stone-cluster-3', 'field/stone/15', 1, 1),
+  // Field-pack grass and flowers are decoration only — they never block movement.
+  sprite('tuft-1', 'field/grass/1', 0, 0),
+  sprite('tuft-2', 'field/grass/2', 0, 0),
+  sprite('tuft-3', 'field/grass/3', 0, 0),
+  sprite('tuft-4', 'field/grass/4', 0, 0),
+  sprite('tuft-5', 'field/grass/5', 0, 0),
+  sprite('tuft-6', 'field/grass/6', 0, 0),
+  sprite('flowers-1', 'field/flower/1', 0, 0),
+  sprite('flowers-2', 'field/flower/7', 0, 0),
+  sprite('flowers-3', 'field/flower/9', 0, 0),
+  sprite('flowers-4', 'field/flower/12', 0, 0),
+  sprite('dirt-patch-1', 'field/decor/dirt1', 0, 0),
+  sprite('dirt-patch-2', 'field/decor/dirt2', 0, 0),
+  sprite('dirt-patch-3', 'field/decor/dirt3', 0, 0),
+  sprite('dirt-patch-4', 'field/decor/dirt4', 0, 0),
+  sprite('dirt-patch-5', 'field/decor/dirt5', 0, 0),
+  sprite('dirt-patch-6', 'field/decor/dirt6', 0, 0),
+  // Trees and vegetation from the real fields pack. Trees and bushes block at
+  // the trunk/root; flowers and tufts are decoration.
+  sprite('tree-1', 'field/decor/tree1', 1, 1),
+  sprite('tree-2', 'field/decor/tree2', 1, 1),
+  sprite('bush-1', 'field/bush/1', 1, 1),
+  sprite('bush-2', 'field/bush/2', 1, 1),
+  sprite('bush-3', 'field/bush/3', 1, 1),
+  sprite('bush-4', 'field/bush/4', 1, 1),
+  sprite('bush-5', 'field/bush/5', 1, 1),
+  sprite('bush-6', 'field/bush/6', 1, 1),
+  // Field-pack camp and defensive dressing.
+  sprite('field-box-1', 'field/decor/box1', 1, 1),
+  sprite('field-box-2', 'field/decor/box2', 1, 1),
+  sprite('field-box-3', 'field/decor/box3', 1, 1),
+  sprite('field-box-4', 'field/decor/box4', 1, 1),
+  sprite('field-log-1', 'field/decor/log1', 1, 1),
+  sprite('field-log-2', 'field/decor/log2', 1, 1),
+  sprite('field-log-3', 'field/decor/log3', 2, 1),
+  sprite('field-log-4', 'field/decor/log4', 1, 1),
+  sprite('field-lamp-1', 'field/decor/lamp1', 1, 1),
+  sprite('field-lamp-2', 'field/decor/lamp2', 1, 1),
+  sprite('field-lamp-3', 'field/decor/lamp3', 1, 1),
+  sprite('field-lamp-4', 'field/decor/lamp4', 1, 1),
+  sprite('field-fence-1', 'field/fence/1', 1, 1),
+  sprite('field-fence-2', 'field/fence/2', 1, 1),
+  sprite('field-fence-3', 'field/fence/3', 1, 1),
+  sprite('field-fence-4', 'field/fence/4', 1, 1),
+  sprite('field-fence-5', 'field/fence/5', 1, 1),
+  sprite('field-fence-6', 'field/fence/6', 1, 1),
+  sprite('field-fence-7', 'field/fence/7', 1, 1),
+  sprite('field-fence-8', 'field/fence/8', 1, 1),
+  sprite('camp-1', 'field/camp/1', 2, 1),
+  sprite('camp-2', 'field/camp/2', 1, 1),
+  sprite('camp-3', 'field/camp/3', 2, 1),
+  sprite('camp-4', 'field/camp/4', 2, 1),
+  sprite('camp-5', 'field/camp/5', 1, 1),
+  sprite('camp-6', 'field/camp/6', 1, 1),
+  sprite('flag-1', 'field/animated/flag/1', 1, 1, { frameWidth: 64, frameHeight: 64, frames: 3, frameRate: 5 }),
+  sprite('flag-2', 'field/animated/flag/3', 1, 1, { frameWidth: 64, frameHeight: 64, frames: 3, frameRate: 5 }),
+  sprite('campfire-1', 'field/animated/campfire/1', 1, 1, {
+    frameWidth: 64,
+    frameHeight: 64,
+    frames: 3,
+    frameRate: 6
+  }),
+  sprite('campfire-2', 'field/animated/campfire/2', 1, 1, {
+    frameWidth: 32,
+    frameHeight: 32,
+    frames: 6,
+    frameRate: 8
+  })
 ]
 
 /**
@@ -101,8 +156,8 @@ function rand(seed: number): number {
   return n - Math.floor(n)
 }
 
-const maxColumn = officeColumns - 1
-const maxRow = officeRows - 1
+const maxColumn = campColumns - 1
+const maxRow = campRows - 1
 
 type Cell = { column: number; row: number }
 
@@ -362,6 +417,33 @@ function buildScatter(): Placement[] {
   add('crate-2', 20, 16)
   add('bench', 19, 16)
 
+  // Low fences mark the edge of worked camp space without turning the clearing
+  // into a defended maze.
+  add('field-fence-7', 1, 6)
+  add('field-fence-8', 2, 6)
+  add('field-fence-5', 23, 6)
+  add('field-fence-6', 24, 6)
+  add('field-fence-2', 2, 8)
+  add('field-fence-4', 23, 10)
+
+  // Camp-life details: real field-pack sprites for fire, flags, bedrolls,
+  // supply boxes, logs, and dirt patches. They add scale cues and make the
+  // village feel occupied without blocking the main road network.
+  add('campfire-1', 5, 17)
+  add('flag-1', 7, 18)
+  add('camp-1', 3, 17)
+  add('camp-2', 6, 18)
+  add('field-box-1', 8, 18)
+  add('field-log-2', 9, 17)
+  add('campfire-2', 18, 17)
+  add('flag-2', 23, 17)
+  add('camp-3', 24, 18)
+  add('camp-5', 22, 18)
+  add('field-box-3', 24, 14)
+  add('field-log-4', 18, 18)
+  add('dirt-patch-4', 5, 18)
+  add('dirt-patch-6', 21, 18)
+
   // Deterministically scatter grass, flowers, bushes, the odd rock, and the
   // occasional tree over the open field, skipping the roads so the player
   // always has clear ground to walk. Vegetation is weighted toward warm,
@@ -374,13 +456,23 @@ function buildScatter(): Placement[] {
     { sprite: 'tuft-5', weight: 3 },
     { sprite: 'tuft-6', weight: 3 },
     { sprite: 'flowers-1', weight: 3 },
+    { sprite: 'flowers-2', weight: 3 },
+    { sprite: 'flowers-3', weight: 2 },
+    { sprite: 'flowers-4', weight: 2 },
+    { sprite: 'dirt-patch-1', weight: 2 },
+    { sprite: 'dirt-patch-2', weight: 2 },
     { sprite: 'bush-1', weight: 2 },
     { sprite: 'bush-2', weight: 2 },
+    { sprite: 'bush-3', weight: 2 },
+    { sprite: 'bush-4', weight: 1 },
+    { sprite: 'bush-5', weight: 1 },
+    { sprite: 'bush-6', weight: 1 },
     { sprite: 'tree-1', weight: 1 },
     { sprite: 'tree-2', weight: 1 },
-    { sprite: 'pine-1', weight: 1 },
     { sprite: 'pebble-1', weight: 1 },
-    { sprite: 'rock', weight: 1 }
+    { sprite: 'pebble-2', weight: 1 },
+    { sprite: 'rock', weight: 1 },
+    { sprite: 'stone-cluster-1', weight: 1 }
   ]
 
   // Expand weights into a flat pool for simple weighted picking.
@@ -425,8 +517,19 @@ function buildScatter(): Placement[] {
   // trees with random species, sub-tile jitter, and occasional gaps — so the
   // treeline reads as a natural wood, not a fence. Road mouths stay clear
   // because `add` skips path cells.
-  const trees = ['tree-1', 'tree-2', 'tree-3', 'tree-4', 'tree-5', 'tree-6', 'pine-1', 'pine-2', 'pine-3']
-  const undergrowth = ['bush-1', 'bush-2', 'bush-3', 'flowers-1', 'flowers-2']
+  const trees = ['tree-1', 'tree-1', 'tree-1', 'tree-2']
+  const undergrowth = [
+    'bush-1',
+    'bush-2',
+    'bush-3',
+    'bush-4',
+    'bush-5',
+    'bush-6',
+    'flowers-1',
+    'flowers-2',
+    'stone-cluster-2',
+    'dirt-patch-3'
+  ]
   let forestSeed = 5000
 
   /**

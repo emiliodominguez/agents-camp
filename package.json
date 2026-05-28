@@ -1,9 +1,9 @@
 {
-  "name": "claude-office",
+  "name": "agents-camp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A pixel-art office where Claude Code agents appear as walkable characters.",
+  "description": "A pixel-art camp where multiple coding-agent harnesses appear as walkable characters.",
   "scripts": {
     "dev": "concurrently -n web,agents -c cyan,magenta \"vite\" \"pnpm dev:server\"",
     "dev:web": "vite",

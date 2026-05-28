@@ -29,15 +29,15 @@ export interface GroundSpec {
 }
 
 /** Which group a character belongs to (used to section the spawn picker). */
-export type CharacterCategory = 'villagers' | 'archers' | 'forest' | 'enemies'
+export type CharacterCategory = 'villagers' | 'archers' | 'forest'
 
 /**
  * One playable/agent character with directional idle and walk animations. Each
  * direction is its own strip (frames laid out left-to-right); the side strip
  * is mirrored for left vs right at render time. Different packs use different
  * filenames for "idle" and "walk", so each state declares its own source
- * suffix (e.g. citizens use `_idle`/`_walk`, archers reuse `_idle` for both,
- * enemies reuse `_run`).
+ * suffix (e.g. citizens use `_idle`/`_walk`, while archers reuse `_idle` for
+ * both states).
  */
 export interface CharacterSpec {
   /** Stable texture key (also the prefix for per-direction texture keys). */
@@ -56,16 +56,27 @@ export interface CharacterSpec {
   label: string
 }
 
+/** A looping object sprite strip, with frames laid out left-to-right. */
+export interface ObjectAnimationSpec {
+  frameWidth: number
+  frameHeight: number
+  frames: number
+  frameRate: number
+}
+
 /**
- * A free-placed object sprite (house, tent, barrel, lamp…), loaded as its own
- * image at native size. Sprites are anchored by their bottom centre so taller
- * objects sit naturally on the ground.
+ * A free-placed object sprite (house, tent, barrel, lamp…), loaded at native
+ * size. Static sprites are plain images; animated sprites are horizontal strips.
+ * Objects are anchored by their bottom centre so taller sprites sit naturally
+ * on the ground.
  */
 export interface ObjectSprite {
   /** Stable texture key. */
   key: string
   /** Public path to the image. */
   path: string
+  /** Optional looping animation for horizontal sprite strips. */
+  animation?: ObjectAnimationSpec
   /**
    * Collision footprint in tiles (width × height) centred on the object's
    * anchor cell. Zero width or height means the object does not block movement.

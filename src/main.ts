@@ -17,7 +17,7 @@ import {
   onSpawned,
   onUsage,
   startAgentClient
-} from './services/agentClient'
+} from './services/agent-client'
 import {
   appendAgentQuestion,
   appendAgentToken,
@@ -26,16 +26,16 @@ import {
   closeChat,
   commitAgentReply,
   recordAgentStatus,
+  setBackendStatus,
   setChatHistory,
-  setLiveMode,
   setSpawnOpen,
   spawnOpen
 } from './overlay/state'
 import { addVillager, removeVillager, setRoster } from './state/roster'
 import { setSkills, setSkillsOpen, skillsOpen } from './state/skills'
 import { setUsage, setUsageOpen, usageOpen } from './state/usage'
-import { VillageScene } from './scenes/VillageScene'
-import { Overlay } from './overlay/Overlay'
+import { VillageScene } from './game/village-scene'
+import { Overlay } from './overlay/overlay'
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -63,7 +63,7 @@ if (overlayRoot !== null) {
 }
 
 // Connect to the agent backend and route its stream into the overlay state.
-onAgentHello((live) => setLiveMode(live))
+onAgentHello((hello) => setBackendStatus(hello))
 onAgentStatus((agentId, status) => recordAgentStatus(agentId, status))
 onAgentToken((agentId, text) => appendAgentToken(agentId, text))
 onAgentReply((agentId, text) => commitAgentReply(agentId, text))

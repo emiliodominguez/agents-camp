@@ -1,6 +1,6 @@
 /**
  * The WebSocket message protocol shared by the agent backend (`server/`) and
- * the browser frontend (`src/services/agentClient.ts`). Keeping it in one place
+ * the browser frontend (`src/services/agent-client.ts`). Keeping it in one place
  * means both ends move together when the protocol changes.
  *
  * The frontend sends {@link ClientMessage}s; the server replies with
@@ -9,6 +9,7 @@
  */
 
 import type { Villager } from './agents'
+import type { AgentHarnessId } from './harnesses'
 
 /** Lifecycle state of a villager, mirrored from agents.ts. */
 export type AgentStatus = 'idle' | 'working' | 'talking'
@@ -17,6 +18,7 @@ export type AgentStatus = 'idle' | 'working' | 'talking'
 export interface VillagerUsage {
   agentId: string
   name: string
+  harness?: AgentHarnessId
   /** Number of completed turns. */
   turns: number
   inputTokens: number
@@ -42,11 +44,21 @@ export interface UsageSnapshot {
   at: number
 }
 
-/** A skill the villagers can call (read from ~/.claude/skills + project skills). */
+/** Runtime availability reported by the backend. */
+export interface HarnessRuntimeStatus {
+  id: AgentHarnessId
+  label: string
+  live: boolean
+  detail: string
+}
+
+/** A skill a harness-backed villager can call. */
 export interface SkillSummary {
+  /** Runtime this skill belongs to. */
+  harness?: AgentHarnessId
   /** Skill name (folder name). */
   name: string
-  /** Origin: "user" (~/.claude/skills) or "project" (.claude/skills). */
+  /** Origin: "user" home dir or "project" repo dir. */
   source: 'user' | 'project'
   /** One-line description, parsed from the skill's frontmatter or first line. */
   description: string
@@ -118,6 +130,8 @@ export type ClientMessage =
       dotColor?: string
       /** Optional capability scope; defaults to 'full'. */
       toolScope?: 'conversational' | 'read-only' | 'full'
+      /** Optional agent runtime; defaults to the server default. */
+      harness?: AgentHarnessId
     }
   | {
       /** Add the default starter villagers (idempotent — no-op if already present). */
@@ -134,6 +148,7 @@ export type ClientMessage =
       agentId: string
       name?: string
       persona?: string
+      harness?: AgentHarnessId
     }
   | {
       /** Answer an AskUserQuestion the agent posed. */
@@ -150,6 +165,8 @@ export type ServerMessage =
       /** Connection handshake: live/mock state and basic server info. */
       type: 'hello'
       live: boolean
+      harnesses: HarnessRuntimeStatus[]
+      defaultHarness: AgentHarnessId
     }
   | {
       /** The current roster (sent on connect and whenever it changes). */

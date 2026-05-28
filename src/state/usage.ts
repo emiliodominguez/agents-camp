@@ -3,9 +3,8 @@ import { createSignal } from 'solid-js'
 import type { UsageSnapshot } from '../../shared/protocol'
 
 /**
- * The latest usage snapshot from the server. Mirrors what `claude /usage`
- * shows — per-villager turns/tokens, totals, last-active time, and (where
- * the API exposes it) rate-limit info.
+ * The latest usage snapshot from the server: per-villager turns/tokens, totals,
+ * and last-active time. Some harnesses report turns without token counts.
  */
 
 const [usage, setUsageSignal] = createSignal<UsageSnapshot | undefined>(undefined)

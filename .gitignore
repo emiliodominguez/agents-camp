@@ -3,7 +3,7 @@ dist
 *.local
 .DS_Store
 
-# Secrets — the agent backend reads ANTHROPIC_API_KEY from here
+# Secrets and local harness configuration.
 .env
 
 # Runtime backend state — file-backed roster and chat transcripts

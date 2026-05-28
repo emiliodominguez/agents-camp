@@ -166,12 +166,89 @@ body {
   gap: 4px;
 }
 
+.harness-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.harness-filter-button {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 4px;
+  align-items: center;
+  background: #151a25;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
+  color: #9aa4c0;
+  cursor: pointer;
+  font: inherit;
+  padding: 6px;
+  text-align: left;
+}
+
+.harness-filter-button:hover,
+.harness-filter-button.active {
+  background: #1d2638;
+  border-color: #52628f;
+}
+
+.harness-filter-button .filter-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #e6e9f0;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-filter-button .filter-count {
+  color: #c9d4ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.harness-filter-button .filter-state {
+  grid-column: 1 / -1;
+  color: #6b7390;
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.harness-filter-button .filter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b7390;
+  flex: none;
+}
+
+.harness-filter-button .filter-dot.live {
+  background: #6bd6a4;
+  box-shadow: 0 0 6px 1px #6bd6a4;
+}
+
+.roster-filter-empty {
+  margin: 2px 0;
+  border: 1px dashed #2c3450;
+  border-radius: 6px;
+  color: #6b7390;
+  font-size: 11px;
+  padding: 8px;
+}
+
 /* One villager row. */
 
 .roster-row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   border-radius: 6px;
   transition: background 0.12s;
 }
@@ -253,12 +330,32 @@ body {
   flex: 1;
 }
 
+.roster-row-meta .name-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
 .roster-row-meta .name {
   font-size: 13px;
   color: #e6e9f0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.harness-badge {
+  flex: none;
+  border: 1px solid #3a4570;
+  border-radius: 4px;
+  background: #151a25;
+  color: #aeb8d8;
+  font-size: 9px;
+  line-height: 1;
+  padding: 3px 4px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .roster-row-meta .status {
@@ -269,6 +366,26 @@ body {
 
 .roster-row-meta .status.working { color: #6bd6a4; }
 .roster-row-meta .status.talking { color: #f0c068; }
+
+.roster-harness-select {
+  width: 68px;
+  height: 24px;
+  flex: none;
+  background: #151a25;
+  border: 1px solid #2c3450;
+  border-radius: 4px;
+  color: #c9d4ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+.roster-harness-select:hover,
+.roster-harness-select:focus {
+  border-color: #52628f;
+  outline: none;
+}
 
 /* Per-row icon controls. */
 
@@ -498,10 +615,23 @@ body {
 }
 
 .usage-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: #e6e9f0;
   font-weight: 600;
   margin-bottom: 3px;
+}
+
+.usage-harness {
+  border: 1px solid #3a4570;
+  border-radius: 4px;
+  color: #aeb8d8;
+  font-size: 9px;
+  line-height: 1;
+  padding: 3px 4px;
+  text-transform: uppercase;
 }
 
 .usage-meta {
@@ -577,6 +707,7 @@ body {
 }
 
 .chat .instructions input,
+.chat .instructions select,
 .chat .instructions textarea {
   background: #0c0f15;
   border: 1px solid #2c3450;
@@ -590,6 +721,7 @@ body {
 }
 
 .chat .instructions input:focus,
+.chat .instructions select:focus,
 .chat .instructions textarea:focus {
   outline: none;
   border-color: #4a5a8c;
@@ -816,13 +948,23 @@ body {
 
 .skills-list li {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: 1fr auto auto;
   gap: 4px 10px;
   background: #11141c;
   border: 1px solid #2c3450;
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
+}
+
+.skills-list .skill-harness {
+  border: 1px solid #3a4570;
+  border-radius: 3px;
+  color: #aeb8d8;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 0 6px;
+  text-transform: uppercase;
 }
 
 .skills-list .skill-name {

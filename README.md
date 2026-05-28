@@ -1,94 +1,108 @@
-# Claude Office
+# Agents Camp
 
-A pixel-art village where Claude Code agents appear as walkable
-characters you can stand next to and talk to.
+A pixel-art village where coding agents from different harnesses
+appear as walkable characters you can stand next to and talk to.
 
-**Status:** walkable medieval-village camp with a working agent backend. Phaser
-4 renders a 26×20 world — a grass field crossed by organic dirt roads that wind
-in from the edges to a market plaza, with four animated villager agents living
-beside their homes. Solid renders the UI overlay, including a proximity chat
-panel. A Node + WebSocket backend runs each agent as a Claude Agent SDK session
-(or canned mock replies when no API key is set).
+**Status:** walkable medieval camp with a WebSocket agent backend. Phaser renders
+a 26x20 world with CraftPix village/field sprites, roads, homes, fences, camp
+props, and animated villagers. Solid renders the roster, spawn dialog, chat
+panel, skill list, and usage view.
 
 ## Stack
 
 - **Phaser 4** — tiled world, animated sprites, movement, collision, proximity
-- **Solid** — reactive UI overlay (roster, talk prompt, streaming chat panel)
+- **Solid** — reactive UI overlay
 - **Node + ws** — agent backend, one session per villager
-- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) — streaming-input
-  conversational agents
+- **Claude Agent SDK** — persistent Claude Code harness sessions
+- **Codex CLI** — turn-based Codex harness sessions
 - **Vite 8 + TypeScript 6**
 
-## Art & themes
+## Harnesses
 
-The whole look is data-driven and swappable. A `Theme` (`src/themes/`) bundles a
-ground tileset, per-agent animated character strips, free-placed object sprites,
-and the authored road network. Adding a new theme is a new `Theme` object — no
-rendering code changes. The full library of downloaded CraftPix packs lives in
-`public/assets/packs/` (see its README) to draw from when extending themes.
+Each villager has a `harness` field. The shared registry lives in
+`shared/harnesses.ts`, with one metadata file per harness under
+`shared/harnesses/`. Runtime adapters live under `server/harnesses/`; each
+harness owns its own `*-session.ts` file and registers through
+`server/harnesses/index.ts`.
 
-Current art: CraftPix "Free Village / Top-Down Defense" tileset (ground, houses,
-tents, props) and "Free Pixel Citizens" (the four animated villagers).
+Add another harness by adding:
+
+- a shared definition in `shared/harnesses/<id>.ts`
+- the id to `shared/harnesses/types.ts`
+- a server adapter in `server/harnesses/<id>-session.ts`
+- the adapter to `server/harnesses/index.ts`
+
+Currently supported:
+
+- **Claude Code** (`claude`) — live when `CLAUDE_CODE_OAUTH_TOKEN`,
+  `ANTHROPIC_API_KEY`, or a local `claude login` session is available. Uses the
+  existing streaming Agent SDK path, Claude Code tools, and Claude skills.
+- **Codex CLI** (`codex`) — live when the `codex` command is available. Runs
+  `codex exec` per turn inside the villager's private workspace. Codex turns
+  count in usage; token counts are zero unless the CLI exposes them through a
+  future adapter.
+- **Mock fallback** — if a villager's chosen harness is unavailable, that
+  villager serves canned persona-flavoured replies.
 
 ## Agents
 
-Each villager is a long-lived agent with a role persona. Stand next to one and
-press **E** to open a chat. Messages stream back token by token; the status
-bubble over the sprite reflects the agent's live state: ⚙️ working → 💬 talking
-→ 💤 idle.
+Each villager has a role persona, tool-scope, harness, sprite, home, dot colour,
+and private workspace at `.agents/workspace/<id>/`. Stand next to one and press
+**E** to chat. Messages stream back into the transcript, and the status bubble
+tracks idle/working/talking.
 
-Villagers are **fully capable coding agents** — they each have a private
-workspace at `.agents/workspace/<id>/` and can use `Read`, `Write`, `Edit`,
-`Glob`, `Grep`, `Bash`, `Skill` (any of your `~/.claude/skills/`), and
-`AskUserQuestion` (rendered as clickable option buttons in the chat). Tool
-calls appear inline in the transcript.
+Spawned villagers can be configured with:
 
-Walk onto an empty plot (the glowing `+` markers) and press E to **spawn a new
-villager** with a custom name, role, and sprite. Chat instructions are editable
-from the chat header — saved on the next message.
+- Harness: Claude Code or Codex CLI
+- Capability scope: conversational, read-only, or full coding
+- Persona/instructions and sprite
 
-The roster, transcripts, and personas all persist on disk under `.agents/` and
-survive reloads and server restarts.
+The roster, transcripts, personas, harness choices, and usage persist under
+`.agents/`.
 
-- **Live:** real Claude replies.
-- **Mock:** with no credentials, the backend serves persona-flavoured canned
-  replies, so the whole pipeline — WebSocket, streaming, status — works end to
-  end (mock mode has no tools).
+> Agents can run tools in their private workspace. Claude full-scope agents use
+> `permissionMode: 'bypassPermissions'`; Codex full-scope agents run with
+> `--sandbox workspace-write --ask-for-approval never`. Use live harnesses only
+> on machines and accounts where that level of local automation is acceptable.
 
-> ⚠️ Villagers run with `permissionMode: 'bypassPermissions'` — they can read,
-> write, edit, and run shell commands without prompting, scoped to their
-> workspace directory (`cwd`) but **Bash itself isn't sandboxed**. Treat them
-> like Claude Code: only run them on machines / accounts where that's fine.
+## Art & Themes
+
+The world is data-driven. A `Theme` in `src/themes/` bundles the ground tileset,
+character strips, free-placed object sprites, and authored road network.
+
+Current live art uses CraftPix village assets plus field-pack foliage, fences,
+camp props, flags, and campfires. Curated pack extracts live in
+`public/assets/packs/`.
+
+## File Layout
+
+Files use kebab-case unless they are conventional entry/config names such as
+`index.ts`, `main.ts`, or `*.d.ts`.
+
+- `src/game/` - Phaser scene, character, furnishing, and world constants
+- `src/overlay/` - Solid overlay UI and overlay-local state
+- `src/services/` - browser service clients
+- `src/state/` - shared client signals
+- `server/harnesses/` - one runtime adapter per agent harness
+- `shared/harnesses/` - shared harness metadata by harness id
 
 ## Run
 
 ```bash
 pnpm install
-pnpm dev   # web on http://localhost:5180, agent backend on ws://localhost:8787
+pnpm dev   # web on http://localhost:5180, backend on ws://localhost:8787
 ```
 
-`pnpm dev` runs both the Vite dev server and the agent backend (Vite proxies
-`/agents` to it). Walk with **WASD** or the arrow keys; press **E** next to an
-agent to talk.
+`pnpm dev` starts Vite and the backend. Vite proxies `/agents` to the backend.
+Walk with **WASD** or arrow keys; press **E** next to a villager or empty plot.
 
-The agents run on real Claude automatically if you're logged in with the Claude
-Code CLI (`claude login`) — the SDK reuses that session, no API key needed, and
-usage draws from your Claude subscription. The roster panel shows whether agents
-are "live (Claude)" or "mock replies".
+Configuration lives in `.env` (copy from `.env.example`):
 
-Other auth options, in precedence order (see `.env.example`):
+- `AGENT_HARNESS=claude|codex` sets the default for new/legacy villagers.
+- `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, or local `claude login` enable
+  the Claude harness.
+- `CLAUDE_AGENT_MODEL` overrides the Claude model.
+- `CODEX_BIN` and `CODEX_AGENT_MODEL` configure the Codex harness.
+- `AGENT_PORT` changes the backend WebSocket port.
 
-1. `CLAUDE_CODE_OAUTH_TOKEN` — a subscription token from `claude setup-token`
-   (best for deploys without an interactive login).
-2. `ANTHROPIC_API_KEY` — a standalone metered API key.
-3. Local `claude login` session — zero config on your own machine.
-
-Other scripts: `pnpm dev:web` (web only), `pnpm dev:server` (backend only),
-`pnpm build`.
-
-## Next steps
-
-1. Give agents tools and a working directory so they can actually do coding work
-   (with a sandbox + permission handling).
-2. Spawn / stop agents from an empty plot.
-3. Directional walk animations while moving.
+Other scripts: `pnpm dev:web`, `pnpm dev:server`, `pnpm build`.
