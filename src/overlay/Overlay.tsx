@@ -11,7 +11,7 @@ import {
   sendUpdate
 } from '../services/agentClient'
 import { dotColorPalette, personaTemplates } from '../../shared/agents'
-import { villagers } from '../state/roster'
+import { rosterCollapsed, setRosterCollapsed, villagers } from '../state/roster'
 import { setSkillsOpen, skills, skillsOpen } from '../state/skills'
 import { setUsageOpen, usage, usageOpen } from '../state/usage'
 import type { AgentStatus, ChatLine } from '../../shared/protocol'
@@ -20,12 +20,15 @@ import {
   appendPlayerLine,
   awaitingReply,
   chatAgent,
+  chatAutoExpandInstructions,
   chatLog,
   closeChat,
   liveMode,
   markQuestionAnswered,
   nearbyAgent,
   nearbyPlot,
+  openChat,
+  setChatAutoExpandInstructions,
   setSpawnOpen,
   spawnOpen,
   streamingReply
@@ -78,58 +81,175 @@ export function Overlay() {
   )
 }
 
-/** The top-left roster panel — live status per villager + skills/seed buttons. */
+/**
+ * The top-left roster panel. A persistent header bar shows the camp name,
+ * a one-line summary (counts + connection), and a chevron toggle. Click the
+ * header to collapse the body — the collapsed state is remembered in
+ * localStorage. The expanded body lists every villager with a mini avatar,
+ * live status, click-to-chat behaviour, and per-row edit/remove controls.
+ */
 function RosterPanel() {
+  /** Count of villagers currently 'working' or 'talking' (anything not idle). */
+  const busyCount = (): number => {
+    const statuses = agentStatuses()
+
+    return villagers().filter((v) => (statuses[v.id] ?? 'idle') !== 'idle').length
+  }
+
+  /** Total turns the camp has racked up across all villagers. */
+  const totalTurns = (): number => usage()?.totals.turns ?? 0
+
+  /** Toggle collapsed state. */
+  const toggle = (): void => setRosterCollapsed(!rosterCollapsed())
+
+  /** Open a villager's chat from the roster (no walking required). */
+  const openVillagerChat = (id: string): void => {
+    openChat(id)
+  }
+
+  /** Open chat with the instructions panel auto-expanded for editing. */
+  const editVillager = (id: string): void => {
+    setChatAutoExpandInstructions(true)
+    openChat(id)
+  }
+
+  /** Remove a villager after confirmation. */
+  const removeVillagerById = (id: string, name: string): void => {
+    if (window.confirm(`Remove ${name} from the camp?`)) {
+      sendRemove(id)
+    }
+  }
+
   return (
-    <div class="panel roster">
-      <h1>{activeTheme.name}</h1>
-
-      <Show
-        when={villagers().length > 0}
-        fallback={
-          <div class="roster-empty">
-            <p>Your camp is empty.</p>
-            <p class="hint">Walk to a glowing <span class="plus">+</span> and press <kbd>E</kbd> to spawn your own villager, or:</p>
-            <button type="button" class="roster-seed" onClick={() => sendSeed()}>
-              + Seed starter villagers
-            </button>
-            <p class="hint">(Planner, Builder, Reviewer, Explorer)</p>
-          </div>
-        }
+    <div class="panel roster" classList={{ collapsed: rosterCollapsed() }}>
+      <button
+        type="button"
+        class="roster-header"
+        onClick={toggle}
+        aria-expanded={!rosterCollapsed()}
+        aria-label={rosterCollapsed() ? 'Expand roster' : 'Collapse roster'}
       >
-        <ul>
-          <For each={villagers()}>
-            {(villager) => {
-              const status = (): AgentStatus => agentStatuses()[villager.id] ?? 'idle'
+        <span class="chevron" aria-hidden="true">{rosterCollapsed() ? '▸' : '▾'}</span>
+        <span class="roster-title">{activeTheme.name}</span>
+        <span class="roster-summary">
+          <Show when={villagers().length > 0} fallback={<>empty</>}>
+            {villagers().length} villager{villagers().length === 1 ? '' : 's'}
+            <Show when={busyCount() > 0}>
+              <> · {busyCount()} busy</>
+            </Show>
+            <Show when={totalTurns() > 0}>
+              <> · {totalTurns()} turn{totalTurns() === 1 ? '' : 's'}</>
+            </Show>
+          </Show>
+        </span>
+        <span class="header-conn" classList={{ live: liveMode() }} title={liveMode() ? 'Live Claude' : 'Mock mode'} />
+      </button>
 
-              return (
-                <li>
-                  <span class="dot" classList={{ active: status() !== 'idle' }} style={{ background: villager.dotColor }} />
-                  <span class="name">{villager.name}</span>
-                  <span class={`status ${status()}`}>{statusWord[status()]}</span>
-                </li>
-              )
-            }}
-          </For>
-        </ul>
+      <Show when={!rosterCollapsed()}>
+        <div class="roster-body">
+          <Show
+            when={villagers().length > 0}
+            fallback={
+              <div class="roster-empty">
+                <p>Your camp is empty.</p>
+                <p class="hint">
+                  Walk to a glowing <span class="plus">+</span> and press <kbd>E</kbd> to spawn your own villager, or:
+                </p>
+                <button type="button" class="roster-seed" onClick={() => sendSeed()}>
+                  + Seed starter villagers
+                </button>
+                <p class="hint">(Planner, Builder, Reviewer, Explorer)</p>
+              </div>
+            }
+          >
+            <ul class="roster-list">
+              <For each={villagers()}>
+                {(villager) => <RosterRow
+                  villager={villager}
+                  onChat={() => openVillagerChat(villager.id)}
+                  onEdit={() => editVillager(villager.id)}
+                  onRemove={() => removeVillagerById(villager.id, villager.name)}
+                />}
+              </For>
+            </ul>
 
-        <p class="hint">Walk with WASD or the arrow keys.</p>
+            <p class="hint">Walk with WASD or click a villager to talk.</p>
+          </Show>
+
+          <p class="conn" classList={{ live: liveMode() }}>
+            <span class="conn-dot" />
+            {liveMode() ? 'Agents live (Claude)' : 'Agents in mock mode'}
+          </p>
+
+          <div class="roster-actions">
+            <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
+              Skills ({skills().length})
+            </button>
+            <button type="button" class="roster-action" onClick={() => setUsageOpen(true)}>
+              Usage
+            </button>
+          </div>
+        </div>
       </Show>
-
-      <p class="conn" classList={{ live: liveMode() }}>
-        <span class="conn-dot" />
-        {liveMode() ? 'Agents live (Claude)' : 'Agents in mock mode'}
-      </p>
-
-      <div class="roster-actions">
-        <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
-          Skills ({skills().length})
-        </button>
-        <button type="button" class="roster-action" onClick={() => setUsageOpen(true)}>
-          Usage
-        </button>
-      </div>
     </div>
+  )
+}
+
+/** One villager row in the roster — avatar, name, status, inline controls. */
+function RosterRow(props: {
+  villager: import('../../shared/agents').Villager
+  onChat: () => void
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  const spec = (): import('../themes/types').CharacterSpec | undefined =>
+    activeTheme.characters.find((c) => c.key === props.villager.sprite)
+
+  const status = (): AgentStatus => agentStatuses()[props.villager.id] ?? 'idle'
+
+  return (
+    <li class="roster-row" classList={{ [status()]: true }}>
+      <button type="button" class="roster-row-main" onClick={props.onChat} title={`Talk to ${props.villager.name}`}>
+        <span class="roster-avatar" style={{ background: `${props.villager.dotColor}22` }}>
+          <Show when={spec()} keyed>
+            {(s) => (
+              <span
+                class="roster-avatar-frame"
+                style={{ '--frame-size': `${s.frameSize}px` }}
+              >
+                <img src={`${s.pathPrefix}/d${s.idle.suffix}.png`} alt="" />
+              </span>
+            )}
+          </Show>
+          <span class="roster-dot" style={{ background: props.villager.dotColor }} />
+        </span>
+        <span class="roster-row-meta">
+          <span class="name">{props.villager.name}</span>
+          <span class={`status ${status()}`}>{statusWord[status()]}</span>
+        </span>
+      </button>
+
+      <span class="roster-row-controls">
+        <button
+          type="button"
+          class="roster-row-icon"
+          onClick={(event) => { event.stopPropagation(); props.onEdit() }}
+          title="Edit instructions"
+          aria-label={`Edit ${props.villager.name}'s instructions`}
+        >
+          ✎
+        </button>
+        <button
+          type="button"
+          class="roster-row-icon danger"
+          onClick={(event) => { event.stopPropagation(); props.onRemove() }}
+          title="Remove villager"
+          aria-label={`Remove ${props.villager.name}`}
+        >
+          ×
+        </button>
+      </span>
+    </li>
   )
 }
 
@@ -150,9 +270,15 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
   let input: HTMLInputElement | undefined
 
   const [editing, setEditing] = createSignal(false)
-  const [instructionsOpen, setInstructionsOpen] = createSignal(false)
+  const [instructionsOpen, setInstructionsOpen] = createSignal(chatAutoExpandInstructions())
   const [draftPersona, setDraftPersona] = createSignal(props.agent.persona)
   const [draftName, setDraftName] = createSignal(props.agent.name)
+
+  // Consume the auto-expand-instructions hint (set by the roster edit button)
+  // exactly once, then clear it so it doesn't leak into the next chat.
+  if (chatAutoExpandInstructions()) {
+    setChatAutoExpandInstructions(false)
+  }
 
   // Ask the server for the saved transcript on open.
   createEffect(() => {

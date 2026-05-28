@@ -75,66 +75,246 @@ body {
   position: absolute;
   top: 16px;
   left: 16px;
-  padding: 14px 16px;
-  min-width: 160px;
-}
-
-.roster h1 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #9aa4c0;
-}
-
-.roster ul {
-  margin: 0;
   padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 6px;
+  min-width: 240px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
 }
 
-.roster li {
+/* Persistent header — always visible, the click target for collapse. */
+
+.roster-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 10px 10px 10px 10px;
+  text-align: left;
+  transition: background 0.15s;
 }
 
-.roster .dot {
+.roster.collapsed .roster-header {
+  border-radius: 10px;
+}
+
+.roster:not(.collapsed) .roster-header {
+  border-radius: 10px 10px 0 0;
+  border-bottom: 1px solid #2c3450;
+}
+
+.roster-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.roster-header .chevron {
+  display: inline-block;
   width: 10px;
-  height: 10px;
+  font-size: 10px;
+  color: #6b7390;
+  transition: transform 0.15s;
+}
+
+.roster-header .roster-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c9d4ff;
+  font-weight: 600;
+}
+
+.roster-header .roster-summary {
+  flex: 1;
+  font-size: 11px;
+  color: #6b7390;
+}
+
+.roster-header .header-conn {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  background: #6b7390;
   flex: none;
+}
+
+.roster-header .header-conn.live {
+  background: #6bd6a4;
+  box-shadow: 0 0 6px 1px #6bd6a4;
+}
+
+/* Collapsible body. */
+
+.roster-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.roster-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* One villager row. */
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.roster-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.roster-row-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: left;
+  min-width: 0;
+}
+
+/* Mini avatar — first frame of the d-idle strip, dot-coloured background. */
+
+.roster-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.roster-avatar-frame {
+  display: block;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+}
+
+.roster-avatar-frame img {
+  image-rendering: pixelated;
+  display: block;
+  width: auto;
+  height: var(--frame-size, 48px);
+  object-fit: none;
+  /* Crop to first frame and scale down. */
+  object-position: 0 0;
+  transform-origin: top left;
+  transform: scale(calc(28 / var(--frame-size, 48)));
+}
+
+.roster-avatar .roster-dot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #11141c;
   box-shadow: 0 0 0 0 transparent;
   transition: box-shadow 0.3s;
 }
 
-.roster .dot.active {
-  box-shadow: 0 0 8px 1px currentColor;
+.roster-row.working .roster-dot,
+.roster-row.talking .roster-dot {
+  box-shadow: 0 0 6px 1px currentColor;
 }
 
-.roster .name {
+.roster-row-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
   flex: 1;
 }
 
-.roster .status {
+.roster-row-meta .name {
+  font-size: 13px;
+  color: #e6e9f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-row-meta .status {
   font-size: 10px;
   color: #6b7390;
   letter-spacing: 0.03em;
 }
 
-.roster .status.working {
-  color: #6bd6a4;
+.roster-row-meta .status.working { color: #6bd6a4; }
+.roster-row-meta .status.talking { color: #f0c068; }
+
+/* Per-row icon controls. */
+
+.roster-row-controls {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex: none;
+  padding-right: 2px;
 }
 
-.roster .status.talking {
-  color: #f0c068;
+.roster-row:hover .roster-row-controls,
+.roster-row:focus-within .roster-row-controls {
+  opacity: 1;
 }
+
+.roster-row-icon {
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: #6b7390;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.roster-row-icon:hover {
+  background: #2c3450;
+  color: #e6e9f0;
+}
+
+.roster-row-icon.danger:hover {
+  background: #5a3030;
+  color: #ffffff;
+}
+
+/* Body footer bits. */
 
 .roster .hint {
-  margin: 12px 0 0;
+  margin: 4px 0 0;
   font-size: 11px;
   color: #6b7390;
 }
@@ -161,7 +341,7 @@ body {
 }
 
 .roster .roster-actions {
-  margin-top: 10px;
+  margin-top: 8px;
   display: flex;
   gap: 6px;
 }

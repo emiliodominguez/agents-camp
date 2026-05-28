@@ -11,7 +11,36 @@ import type { Villager } from '../../shared/agents'
 
 const [villagers, setVillagers] = createSignal<Villager[]>([])
 
-export { villagers }
+/** localStorage key for the roster panel's collapsed state. */
+const rosterCollapsedKey = 'claude-office:roster-collapsed'
+
+/** Initialise from localStorage so collapse state survives reloads. */
+function loadInitialCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(rosterCollapsedKey) === '1'
+  } catch {
+    return false
+  }
+}
+
+const [rosterCollapsed, setRosterCollapsedSignal] = createSignal<boolean>(loadInitialCollapsed())
+
+export { villagers, rosterCollapsed }
+
+/** Set the collapse state and persist it. */
+export function setRosterCollapsed(value: boolean): void {
+  setRosterCollapsedSignal(value)
+
+  try {
+    if (value) {
+      window.localStorage.setItem(rosterCollapsedKey, '1')
+    } else {
+      window.localStorage.removeItem(rosterCollapsedKey)
+    }
+  } catch {
+    // Storage unavailable — collapse state just won't persist.
+  }
+}
 
 /** Replace the entire roster (sent on connect). */
 export function setRoster(next: Villager[]): void {

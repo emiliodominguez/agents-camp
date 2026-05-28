@@ -25,6 +25,12 @@ const [chatAgent, setChatAgent] = createSignal<Villager | undefined>(undefined)
 /** Whether the spawn dialog is open. */
 const [spawnOpen, setSpawnOpen] = createSignal(false)
 
+/** When true on chat open, the instructions panel auto-expands (used by the
+ * roster's edit shortcut). Cleared after the chat reads it. */
+const [chatAutoExpandInstructions, setChatAutoExpandInstructions] = createSignal(false)
+
+export { chatAutoExpandInstructions, setChatAutoExpandInstructions }
+
 /** The committed transcript for the open chat. */
 const [chatLog, setChatLog] = createSignal<ChatLine[]>([])
 
