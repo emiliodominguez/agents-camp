@@ -6,6 +6,7 @@ import { defaultSeed, dotColorPalette, type Villager } from '../shared/agents'
 import { normalizeHarness } from '../shared/harnesses'
 import type { ClientMessage, ServerMessage, UsageSnapshot, VillagerUsage } from '../shared/protocol'
 import { createSession, defaultAgentHarness, harnessStatuses, isLive, type AgentSession } from './harnesses'
+import { buildSessionHandoff } from './harnesses/handoff'
 import { listSkills } from './skills'
 import {
   appendTranscriptLine,
@@ -79,6 +80,9 @@ function usageSnapshot(): UsageSnapshot {
 /** Every connected socket, so roster broadcasts reach all open tabs. */
 const sockets = new Set<WebSocket>()
 
+/** Per-socket session maps, used to invalidate a villager session across tabs. */
+const sessionMaps = new Set<Map<string, AgentSession>>()
+
 /**
  * Send a typed server message over a socket if it is still open.
  *
@@ -95,6 +99,14 @@ function send(socket: WebSocket, message: ServerMessage): void {
 function broadcast(message: ServerMessage): void {
   for (const socket of sockets) {
     send(socket, message)
+  }
+}
+
+/** Close cached sessions for one villager across every connected socket. */
+function closeAgentSessions(agentId: string): void {
+  for (const map of sessionMaps) {
+    map.get(agentId)?.close()
+    map.delete(agentId)
   }
 }
 
@@ -138,6 +150,7 @@ webSocketServer.on('connection', (socket) => {
   // Each connection owns its own per-villager sessions so tabs don't share
   // streaming state. The roster itself is shared (server-owned).
   const sessions = new Map<string, AgentSession>()
+  sessionMaps.add(sessions)
 
   /**
    * Lazily create (and cache) the session for a villager, wiring its callbacks
@@ -160,6 +173,8 @@ webSocketServer.on('connection', (socket) => {
     }
 
     const workspace = ensureWorkspace(agentId)
+    const harness = normalizeHarness(villager.harness ?? defaultAgentHarness())
+    const handoff = buildSessionHandoff(villager, loadTranscript(agentId))
 
     const session = createSession(
       villager,
@@ -167,8 +182,8 @@ webSocketServer.on('connection', (socket) => {
         onStatus: (status) => send(socket, { type: 'status', agentId, status }),
         onToken: (text) => send(socket, { type: 'token', agentId, text }),
         onReply: (text) => {
-          appendTranscriptLine(agentId, { kind: 'message', from: 'agent', text, at: Date.now() })
-          send(socket, { type: 'reply', agentId, text })
+          appendTranscriptLine(agentId, { kind: 'message', from: 'agent', text, at: Date.now(), harness })
+          send(socket, { type: 'reply', agentId, text, harness })
         },
         onTool: (event) => {
           appendTranscriptLine(agentId, {
@@ -176,24 +191,26 @@ webSocketServer.on('connection', (socket) => {
             name: event.name,
             input: event.input,
             summary: event.summary,
-            at: Date.now()
+            at: Date.now(),
+            harness
           })
-          send(socket, { type: 'tool', agentId, name: event.name, input: event.input, summary: event.summary })
+          send(socket, { type: 'tool', agentId, name: event.name, input: event.input, summary: event.summary, harness })
         },
         onQuestion: (event) => {
           appendTranscriptLine(agentId, {
             kind: 'question',
             from: 'agent',
             at: Date.now(),
-            question: { ...event }
+            question: { ...event },
+            harness
           })
-          send(socket, { type: 'question', agentId, question: { ...event } })
+          send(socket, { type: 'question', agentId, question: { ...event }, harness })
         },
         onResult: (event) => {
           const current = usage.get(agentId) ?? {
             agentId,
             name: villager.name,
-            harness: normalizeHarness(villager.harness ?? defaultAgentHarness()),
+            harness,
             turns: 0,
             inputTokens: 0,
             outputTokens: 0,
@@ -204,7 +221,7 @@ webSocketServer.on('connection', (socket) => {
           const updated: VillagerUsage = {
             ...current,
             name: villager.name,
-            harness: normalizeHarness(villager.harness ?? defaultAgentHarness()),
+            harness,
             turns: current.turns + event.turns,
             inputTokens: current.inputTokens + event.inputTokens,
             outputTokens: current.outputTokens + event.outputTokens,
@@ -217,9 +234,13 @@ webSocketServer.on('connection', (socket) => {
           saveUsage(usage)
           broadcast({ type: 'usage', usage: usageSnapshot() })
         },
-        onError: (message) => send(socket, { type: 'error', agentId, message })
+        onError: (message) => {
+          appendTranscriptLine(agentId, { kind: 'error', message, at: Date.now(), harness })
+          send(socket, { type: 'error', agentId, message, harness })
+        }
       },
-      workspace
+      workspace,
+      handoff
     )
 
     sessions.set(agentId, session)
@@ -345,9 +366,8 @@ webSocketServer.on('connection', (socket) => {
       saveRoster(roster)
 
       // Close any existing session so the next message rebuilds with the new
-      // system prompt — the SDK doesn't support changing it mid-conversation.
-      sessions.get(parsed.agentId)?.close()
-      sessions.delete(parsed.agentId)
+      // prompt and selected harness; provider sessions are not portable.
+      closeAgentSessions(parsed.agentId)
 
       broadcast({ type: 'roster', villagers: roster })
     } else if (parsed.type === 'remove') {
@@ -363,8 +383,7 @@ webSocketServer.on('connection', (socket) => {
       deleteWorkspace(parsed.agentId)
       usage.delete(parsed.agentId)
       saveUsage(usage)
-      sessions.get(parsed.agentId)?.close()
-      sessions.delete(parsed.agentId)
+      closeAgentSessions(parsed.agentId)
       broadcast({ type: 'removed', agentId: parsed.agentId })
       broadcast({ type: 'usage', usage: usageSnapshot() })
     }
@@ -372,6 +391,7 @@ webSocketServer.on('connection', (socket) => {
 
   socket.on('close', () => {
     sockets.delete(socket)
+    sessionMaps.delete(sessions)
 
     for (const session of sessions.values()) {
       session.close()

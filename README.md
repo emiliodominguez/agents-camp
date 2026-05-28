@@ -41,10 +41,15 @@ Currently supported:
   existing streaming Agent SDK path, Claude Code tools, and Claude skills.
 - **Codex CLI** (`codex`) — live when the `codex` command is available. Runs
   `codex exec` per turn inside the villager's private workspace. Codex turns
-  count in usage; token counts are zero unless the CLI exposes them through a
-  future adapter.
+  count in usage with input, output, and cached-input token buckets.
 - **Mock fallback** — if a villager's chosen harness is unavailable, that
   villager serves canned persona-flavoured replies.
+
+Switching a villager between harnesses closes the old runtime session and starts
+a fresh session on the next message. The saved transcript stays attached to the
+villager, and the new harness receives compact handoff context so the chat can
+continue without pretending provider sessions are interchangeable. Agent
+transcript lines show which harness produced them.
 
 ## Agents
 

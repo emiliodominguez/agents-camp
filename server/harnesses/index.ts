@@ -8,9 +8,9 @@ import {
 import { claudeHarness } from './claude-session'
 import { codexHarness } from './codex-session'
 import { createMockSession } from './mock-session'
-import type { AgentSession, HarnessAdapter, HarnessRuntime, SessionHandlers } from './session-types'
+import type { AgentSession, HarnessAdapter, HarnessRuntime, SessionHandlers, SessionHandoff } from './session-types'
 
-export type { AgentSession, HarnessRuntime, SessionHandlers } from './session-types'
+export type { AgentSession, HarnessRuntime, SessionHandlers, SessionHandoff } from './session-types'
 
 const adapters: HarnessAdapter[] = [
   claudeHarness,
@@ -47,13 +47,18 @@ export function isLive(): boolean {
   return harnessStatuses().some((harness) => harness.live)
 }
 
-export function createSession(villager: Villager, handlers: SessionHandlers, cwd: string): AgentSession {
+export function createSession(
+  villager: Villager,
+  handlers: SessionHandlers,
+  cwd: string,
+  handoff: SessionHandoff
+): AgentSession {
   const harness = normalizeHarness(villager.harness ?? defaultAgentHarness())
   const adapter = adapterById.get(harness)
 
   if (adapter?.isLive()) {
-    return adapter.create(villager, handlers, cwd)
+    return adapter.create(villager, handlers, cwd, handoff)
   }
 
-  return createMockSession(villager, handlers)
+  return createMockSession(villager, handlers, handoff)
 }

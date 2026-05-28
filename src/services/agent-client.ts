@@ -1,4 +1,5 @@
 import type { Villager } from '../../shared/agents'
+import type { AgentHarnessId } from '../../shared/harnesses'
 import type {
   AgentQuestion,
   AgentStatus,
@@ -17,20 +18,20 @@ import type {
 
 type StatusListener = (agentId: string, status: AgentStatus) => void
 type TokenListener = (agentId: string, text: string) => void
-type ReplyListener = (agentId: string, text: string) => void
+type ReplyListener = (agentId: string, text: string, harness?: AgentHarnessId) => void
 type HelloMessage = Extract<ServerMessage, { type: 'hello' }>
 type HelloListener = (message: HelloMessage) => void
 type RosterListener = (villagers: Villager[]) => void
 type SpawnedListener = (villager: Villager) => void
 type RemovedListener = (agentId: string) => void
 type HistoryListener = (agentId: string, lines: ChatLine[]) => void
-type ToolListener = (agentId: string, tool: { name: string; input: unknown; summary: string }) => void
-type QuestionListener = (agentId: string, question: AgentQuestion) => void
+type ToolListener = (agentId: string, tool: { name: string; input: unknown; summary: string; harness?: AgentHarnessId }) => void
+type QuestionListener = (agentId: string, question: AgentQuestion, harness?: AgentHarnessId) => void
 type SkillsListener = (skills: SkillSummary[]) => void
 type UsageListener = (usage: UsageSnapshot) => void
 export type AgentConnectionState = 'connecting' | 'connected' | 'disconnected'
 type ConnectionListener = (state: AgentConnectionState) => void
-type ErrorListener = (agentId: string, message: string) => void
+type ErrorListener = (agentId: string, message: string, harness?: AgentHarnessId) => void
 
 const statusListeners = new Set<StatusListener>()
 const tokenListeners = new Set<TokenListener>()
@@ -107,7 +108,7 @@ function connect(): void {
       }
     } else if (message.type === 'reply') {
       for (const listener of replyListeners) {
-        listener(message.agentId, message.text)
+        listener(message.agentId, message.text, message.harness)
       }
     } else if (message.type === 'history') {
       for (const listener of historyListeners) {
@@ -115,11 +116,11 @@ function connect(): void {
       }
     } else if (message.type === 'tool') {
       for (const listener of toolListeners) {
-        listener(message.agentId, { name: message.name, input: message.input, summary: message.summary })
+        listener(message.agentId, { name: message.name, input: message.input, summary: message.summary, harness: message.harness })
       }
     } else if (message.type === 'question') {
       for (const listener of questionListeners) {
-        listener(message.agentId, message.question)
+        listener(message.agentId, message.question, message.harness)
       }
     } else if (message.type === 'skills') {
       for (const listener of skillsListeners) {
@@ -131,7 +132,7 @@ function connect(): void {
       }
     } else if (message.type === 'error') {
       for (const listener of errorListeners) {
-        listener(message.agentId, message.message)
+        listener(message.agentId, message.message, message.harness)
       }
     }
   })

@@ -6,7 +6,7 @@ import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 import { buildSharedVoice, type ToolScope, type Villager } from '../../shared/agents'
 import { harnessById } from '../../shared/harnesses'
-import type { AgentSession, HarnessAdapter, SessionHandlers } from './session-types'
+import type { AgentSession, HarnessAdapter, SessionHandlers, SessionHandoff } from './session-types'
 
 /** Claude auth source detected by the backend. */
 export type ClaudeAuthMode = 'subscription-token' | 'api-key' | 'local-login' | 'mock'
@@ -134,10 +134,16 @@ function isClaudeLive(): boolean {
   return claudeAuthMode() !== 'mock'
 }
 
-function createClaudeSession(villager: Villager, handlers: SessionHandlers, cwd: string): AgentSession {
+function createClaudeSession(
+  villager: Villager,
+  handlers: SessionHandlers,
+  cwd: string,
+  handoff: SessionHandoff
+): AgentSession {
   const model = process.env.CLAUDE_AGENT_MODEL ?? process.env.AGENT_MODEL ?? 'claude-sonnet-4-6'
   const queue = new MessageQueue()
   const pendingAnswers = new Map<string, (picks: string[]) => void>()
+  const handoffPrompt = handoff.prompt === '' ? '' : `\n\n<handoff_context>\n${handoff.prompt}\n</handoff_context>`
 
   async function* prompt(): AsyncGenerator<SDKUserMessage> {
     for await (const text of queue) {
@@ -149,7 +155,7 @@ function createClaudeSession(villager: Villager, handlers: SessionHandlers, cwd:
     prompt: prompt(),
     options: {
       model,
-      systemPrompt: `${villager.persona}\n\n${buildSharedVoice(villager.toolScope ?? 'full', 'claude')}`,
+      systemPrompt: `${villager.persona}\n\n${buildSharedVoice(villager.toolScope ?? 'full', 'claude')}${handoffPrompt}`,
       cwd,
       allowedTools: toolsForScope(villager.toolScope ?? 'full'),
       permissionMode: 'bypassPermissions',

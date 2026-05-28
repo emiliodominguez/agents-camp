@@ -166,12 +166,12 @@ export function appendPlayerLine(text: string): void {
 }
 
 /** Show a backend/harness error inline in the open chat and clear pending reply state. */
-export function recordAgentError(agentId: string, message: string): void {
+export function recordAgentError(agentId: string, message: string, harness?: AgentHarnessId): void {
   if (chatAgent()?.id !== agentId) {
     return
   }
 
-  setChatLog((lines) => [...lines, { kind: 'error', message, at: Date.now() }])
+  setChatLog((lines) => [...lines, { kind: 'error', message, at: Date.now(), harness }])
   setStreamingReply('')
   setAwaitingReply(false)
   setAgentStatuses((current) => ({ ...current, [agentId]: 'idle' }))
@@ -198,12 +198,12 @@ export function appendAgentToken(agentId: string, text: string): void {
  * @param agentId - The villager that replied.
  * @param text - The full reply.
  */
-export function commitAgentReply(agentId: string, text: string): void {
+export function commitAgentReply(agentId: string, text: string, harness?: AgentHarnessId): void {
   if (chatAgent()?.id !== agentId) {
     return
   }
 
-  setChatLog((lines) => [...lines, { kind: 'message', from: 'agent', text, at: Date.now() }])
+  setChatLog((lines) => [...lines, { kind: 'message', from: 'agent', text, at: Date.now(), harness }])
   setStreamingReply('')
   setAwaitingReply(false)
 }
@@ -215,12 +215,18 @@ export function commitAgentReply(agentId: string, text: string): void {
  * @param agentId - The villager that called the tool.
  * @param tool - Tool name, input, and summary.
  */
-export function appendAgentTool(agentId: string, tool: { name: string; input: unknown; summary: string }): void {
+export function appendAgentTool(
+  agentId: string,
+  tool: { name: string; input: unknown; summary: string; harness?: AgentHarnessId }
+): void {
   if (chatAgent()?.id !== agentId) {
     return
   }
 
-  setChatLog((lines) => [...lines, { kind: 'tool', name: tool.name, input: tool.input, summary: tool.summary, at: Date.now() }])
+  setChatLog((lines) => [
+    ...lines,
+    { kind: 'tool', name: tool.name, input: tool.input, summary: tool.summary, at: Date.now(), harness: tool.harness }
+  ])
 }
 
 /**
@@ -231,13 +237,14 @@ export function appendAgentTool(agentId: string, tool: { name: string; input: un
  */
 export function appendAgentQuestion(
   agentId: string,
-  question: import('../../shared/protocol').AgentQuestion
+  question: import('../../shared/protocol').AgentQuestion,
+  harness?: AgentHarnessId
 ): void {
   if (chatAgent()?.id !== agentId) {
     return
   }
 
-  setChatLog((lines) => [...lines, { kind: 'question', from: 'agent', at: Date.now(), question }])
+  setChatLog((lines) => [...lines, { kind: 'question', from: 'agent', at: Date.now(), question, harness }])
 }
 
 /**

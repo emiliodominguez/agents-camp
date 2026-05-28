@@ -1,6 +1,6 @@
 import type { Villager } from '../../shared/agents'
 import type { AgentHarnessId } from '../../shared/harnesses'
-import type { AgentStatus, HarnessRuntimeState } from '../../shared/protocol'
+import type { AgentStatus, ChatLine, HarnessRuntimeState } from '../../shared/protocol'
 
 /**
  * Callbacks an AgentSession uses to report progress back to whoever owns it.
@@ -51,10 +51,16 @@ export interface AgentSession {
   close: () => void
 }
 
+/** Portable transcript context passed when a harness session starts or switches. */
+export interface SessionHandoff {
+  transcript: ChatLine[]
+  prompt: string
+}
+
 /** One server-side implementation for a registered harness. */
 export interface HarnessAdapter {
   id: AgentHarnessId
   isLive: () => boolean
   status: () => HarnessRuntime
-  create: (villager: Villager, handlers: SessionHandlers, cwd: string) => AgentSession
+  create: (villager: Villager, handlers: SessionHandlers, cwd: string, handoff: SessionHandoff) => AgentSession
 }

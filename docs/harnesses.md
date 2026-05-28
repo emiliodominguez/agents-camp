@@ -11,7 +11,7 @@ Shared harness metadata is in `shared/harnesses/`.
 - `codex.ts` defines the Codex CLI UI metadata.
 - `../harnesses.ts` exports the registry, default harness, normalization, and lookup helpers.
 
-The frontend uses this registry for roster filters, spawn choices, chat editing, skill labels, and usage labels.
+The frontend uses this registry for roster filters, spawn choices, chat editing, transcript labels, skill labels, and usage labels.
 
 ## Server Adapters
 
@@ -19,12 +19,27 @@ Runtime logic is isolated under `server/harnesses/`.
 
 - `claude-session.ts` owns Claude Agent SDK streaming sessions, auth detection, allowed tool mapping, Claude tool summaries, and AskUserQuestion interception.
 - `codex-session.ts` owns Codex CLI turn execution, sandbox mapping, prompt construction, output capture, and streamed final replies.
+- `handoff.ts` builds compact provider-neutral transcript context for fresh sessions and harness switches.
 - `mock-session.ts` owns fallback canned replies when a selected harness is unavailable.
 - `session-types.ts` defines the common adapter/session interfaces.
 - `streaming.ts` provides shared text streaming helpers.
 - `index.ts` registers adapters and chooses live vs mock sessions.
 
 `server/index.ts` imports only from `server/harnesses/index.ts`; it does not know Claude or Codex internals.
+
+## Switching Harnesses
+
+The villager transcript is the canonical conversation record. Harness sessions are runtime-specific and are not moved directly between providers.
+
+When a villager changes harness:
+
+1. The roster updates the villager's `harness`.
+2. Any existing live session for that villager is closed.
+3. The next message creates a fresh session for the selected harness.
+4. `handoff.ts` builds a compact context prompt from the saved transcript and passes it to the adapter.
+5. The new harness receives the handoff context plus the current player message.
+
+Committed agent messages, tool calls, questions, and errors store the harness that produced them. The chat UI shows that attribution, so mixed Claude/Codex transcripts stay understandable.
 
 ## Current Harnesses
 
@@ -54,7 +69,7 @@ Use `codex doctor` to verify local auth and connectivity when the UI reports Cod
 
 Codex sessions are turn-based:
 
-1. Build a prompt from persona, shared voice, capability scope, recent transcript, and player message.
+1. Build a prompt from persona, shared voice, capability scope, optional handoff context, recent session-local transcript, and player message.
 2. Run `codex exec --json` in the villager workspace.
 3. Read `--output-last-message`.
 4. Parse `turn.completed.usage` so input, output, and cached input tokens update the same usage counters as Claude.
@@ -79,7 +94,7 @@ Each returned skill is tagged with its harness so the UI can show which runtime 
 1. Add the id to `AgentHarnessId` in `shared/harnesses/types.ts`.
 2. Add `shared/harnesses/<id>.ts` with UI metadata.
 3. Add the definition to `harnessDefinitions` in `shared/harnesses.ts`.
-4. Add `server/harnesses/<id>-session.ts` implementing `HarnessAdapter`.
+4. Add `server/harnesses/<id>-session.ts` implementing `HarnessAdapter`; consume the `SessionHandoff` prompt where the runtime accepts startup/system context.
 5. Register the adapter in `server/harnesses/index.ts`.
 6. Add any skill roots to `server/skills.ts`.
 7. Add env vars to `.env.example`.

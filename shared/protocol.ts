@@ -94,6 +94,8 @@ export type ChatLine =
       from: 'you' | 'agent'
       text: string
       at: number
+      /** Runtime that produced or owned this line, if known. */
+      harness?: AgentHarnessId
     }
   | {
       kind: 'tool'
@@ -102,17 +104,23 @@ export type ChatLine =
       /** Brief one-line summary for compact display. */
       summary: string
       at: number
+      /** Runtime that emitted this tool call. */
+      harness?: AgentHarnessId
     }
   | {
       kind: 'question'
       from: 'agent'
       at: number
       question: AgentQuestion
+      /** Runtime that asked this question. */
+      harness?: AgentHarnessId
     }
   | {
       kind: 'error'
       message: string
       at: number
+      /** Runtime handling the turn when the error occurred, if known. */
+      harness?: AgentHarnessId
     }
 
 /** A message sent from the browser to the agent backend. */
@@ -219,6 +227,7 @@ export type ServerMessage =
       type: 'reply'
       agentId: string
       text: string
+      harness?: AgentHarnessId
     }
   | {
       /** Server-supplied transcript for a villager (in response to `history`). */
@@ -233,16 +242,19 @@ export type ServerMessage =
       name: string
       input: unknown
       summary: string
+      harness?: AgentHarnessId
     }
   | {
       /** The agent asked the player a multi-choice question. */
       type: 'question'
       agentId: string
       question: AgentQuestion
+      harness?: AgentHarnessId
     }
   | {
       /** Something went wrong handling a message for an agent. */
       type: 'error'
       agentId: string
       message: string
+      harness?: AgentHarnessId
     }

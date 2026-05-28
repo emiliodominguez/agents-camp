@@ -50,6 +50,10 @@ function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function lineHarnessLabel(harness: AgentHarnessId | undefined): string | undefined {
+  return harness === undefined ? undefined : harnessById(normalizeHarness(harness)).shortLabel
+}
+
 /**
  * The UI overlay: roster, contextual prompts, the chat panel (with editable
  * instructions, tool-call rendering, and AskUserQuestion option buttons), the
@@ -294,33 +298,34 @@ function RosterPanel() {
               </ul>
             </Show>
 
-            <p class="hint">Agents can move between harnesses as their work changes.</p>
           </Show>
 
-          <p
-            class="conn"
-            classList={{
-              live: agentConnectionState() === 'connected' && liveMode(),
-              warn: agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0
-            }}
-            id="roster-runtime-status"
-          >
-            <span class="conn-dot" aria-hidden="true" />
-            {connectionText()}
-          </p>
+          <div class="roster-footer">
+            <p
+              class="conn"
+              classList={{
+                live: agentConnectionState() === 'connected' && liveMode(),
+                warn: agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0
+              }}
+              id="roster-runtime-status"
+            >
+              <span class="conn-dot" aria-hidden="true" />
+              {connectionText()}
+            </p>
+
+            <div class="roster-actions">
+              <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
+                Skills ({skills().length})
+              </button>
+              <button type="button" class="roster-action" onClick={() => setUsageOpen(true)}>
+                Usage
+              </button>
+            </div>
+          </div>
 
           <Show when={agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0}>
             <RuntimeNotice unavailableHarnesses={unavailableHarnesses()} />
           </Show>
-
-          <div class="roster-actions">
-            <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
-              Skills ({skills().length})
-            </button>
-            <button type="button" class="roster-action" onClick={() => setUsageOpen(true)}>
-              Usage
-            </button>
-          </div>
         </div>
       </Show>
     </div>
@@ -493,6 +498,7 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
     normalizeHarness(props.agent.harness ?? defaultAgentHarness())
   )
   const activeHarness = () => harnessById(normalizeHarness(agent().harness ?? defaultAgentHarness()))
+  const chatSpec = () => activeTheme.characters.find((character) => character.key === agent().sprite)
 
   // Consume the auto-expand-instructions hint (set by the roster edit button)
   // exactly once, then clear it so it doesn't leak into the next chat.
@@ -556,7 +562,16 @@ function ChatPanel(props: { agent: NonNullable<ReturnType<typeof chatAgent>> }) 
     <div class="panel chat" role="dialog" aria-labelledby="chat-title">
       <header>
         <span class="chat-agent-summary">
-          <span class="dot" style={{ background: agent().dotColor }} aria-hidden="true" />
+          <span class="chat-avatar" style={{ background: `${agent().dotColor}22` }} aria-hidden="true">
+            <Show when={chatSpec()} keyed>
+              {(spec) => (
+                <span class="chat-avatar-frame" style={{ '--frame-size': `${spec.frameSize}px` }}>
+                  <img src={`${spec.pathPrefix}/d${spec.idle.suffix}.png`} alt="" />
+                </span>
+              )}
+            </Show>
+            <span class="dot" style={{ background: agent().dotColor }} />
+          </span>
           <span class="chat-agent-copy">
             <span class="chat-title-row">
               <strong id="chat-title">{agent().name}</strong>
@@ -699,11 +714,13 @@ function Line(props: { line: ChatLine; agentName: string; agentId: string }) {
       <Show when={props.line.kind === 'message'}>
         {(() => {
           const line = props.line as Extract<ChatLine, { kind: 'message' }>
+          const harness = line.from === 'agent' ? lineHarnessLabel(line.harness) : undefined
 
           return (
             <div class={`line message ${line.from}`}>
               <span class="meta">
                 <span class="who">{line.from === 'you' ? 'You' : props.agentName}</span>
+                <Show when={harness}>{(label) => <span class="line-harness">{label()}</span>}</Show>
                 <time class="time" dateTime={new Date(line.at).toISOString()}>{formatTime(line.at)}</time>
               </span>
               <span class="text">{line.text}</span>
@@ -715,10 +732,14 @@ function Line(props: { line: ChatLine; agentName: string; agentId: string }) {
       <Show when={props.line.kind === 'tool'}>
         {(() => {
           const line = props.line as Extract<ChatLine, { kind: 'tool' }>
+          const harness = lineHarnessLabel(line.harness)
 
           return (
             <div class="line tool">
-              <span class="tool-badge">{line.name}</span>
+              <span class="tool-meta">
+                <span class="tool-badge">{line.name}</span>
+                <Show when={harness}>{(label) => <span class="line-harness">{label()}</span>}</Show>
+              </span>
               <span class="tool-summary">{line.summary}</span>
             </div>
           )
@@ -736,11 +757,13 @@ function Line(props: { line: ChatLine; agentName: string; agentId: string }) {
       <Show when={props.line.kind === 'error'}>
         {(() => {
           const line = props.line as Extract<ChatLine, { kind: 'error' }>
+          const harness = lineHarnessLabel(line.harness)
 
           return (
             <div class="line error" role="alert">
               <span class="meta">
                 <span class="who">System</span>
+                <Show when={harness}>{(label) => <span class="line-harness">{label()}</span>}</Show>
                 <time class="time" dateTime={new Date(line.at).toISOString()}>{formatTime(line.at)}</time>
               </span>
               <span class="text">{line.message}</span>
@@ -787,6 +810,7 @@ function QuestionLine(props: {
     <div class="line question">
       <span class="meta">
         <span class="who">{props.agentName}</span>
+        <Show when={lineHarnessLabel(props.line.harness)}>{(label) => <span class="line-harness">{label()}</span>}</Show>
         <span class="time">{formatTime(props.line.at)}</span>
       </span>
       <div class="question-body">

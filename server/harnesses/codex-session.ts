@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { buildSharedVoice, type ToolScope, type Villager } from '../../shared/agents'
 import { harnessById } from '../../shared/harnesses'
-import type { AgentSession, HarnessAdapter, ResultEvent, SessionHandlers } from './session-types'
+import type { AgentSession, HarnessAdapter, ResultEvent, SessionHandlers, SessionHandoff } from './session-types'
 import { streamReply } from './streaming'
 
 type ChatHistoryLine = { from: 'you' | 'agent'; text: string }
@@ -88,7 +88,7 @@ function scopeInstruction(scope: ToolScope): string {
   return 'You may inspect, edit, write, and run commands in your private workspace when it helps the task.'
 }
 
-function buildPrompt(villager: Villager, text: string, history: ChatHistoryLine[]): string {
+function buildPrompt(villager: Villager, text: string, history: ChatHistoryLine[], handoff: SessionHandoff): string {
   const scope = villager.toolScope ?? 'full'
   const transcript = history
     .slice(-8)
@@ -101,6 +101,7 @@ function buildPrompt(villager: Villager, text: string, history: ChatHistoryLine[
     buildSharedVoice(scope, 'codex'),
     scopeInstruction(scope),
     'Keep your final reply concise and in character. If you changed files, summarize exactly what changed.',
+    handoff.prompt === '' ? '' : `<handoff_context>\n${handoff.prompt}\n</handoff_context>`,
     transcript === '' ? '' : `<conversation>\n${transcript}\n</conversation>`,
     `<player_message>\n${text}\n</player_message>`
   ]
@@ -177,7 +178,12 @@ function isCodexLive(): boolean {
   return codexHealth().live
 }
 
-function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: string): AgentSession {
+function createCodexSession(
+  villager: Villager,
+  handlers: SessionHandlers,
+  cwd: string,
+  handoff: SessionHandoff
+): AgentSession {
   const history: ChatHistoryLine[] = []
   const pending: string[] = []
   let running = false
@@ -234,7 +240,7 @@ function createCodexSession(villager: Villager, handlers: SessionHandlers, cwd: 
 
     args.push('-')
 
-    const prompt = buildPrompt(villager, text, history)
+    const prompt = buildPrompt(villager, text, history, handoff)
 
     history.push({ from: 'you', text })
     handlers.onStatus('working')

@@ -25,14 +25,17 @@ Agents Camp is a browser game plus a local WebSocket backend.
 4. Phaser listens for roster changes and adds/removes character sprites.
 5. Chat messages go browser -> backend -> selected harness adapter.
 6. Harness adapters stream status, tokens, tools, questions, replies, and usage back through `ServerMessage`.
-7. Chat transcripts, roster, usage, and per-agent workspaces persist under `.agents/`.
+7. Committed agent transcript lines are tagged with the harness that produced them.
+8. Chat transcripts, roster, usage, and per-agent workspaces persist under `.agents/`.
+
+When a villager switches harnesses, the server closes the old runtime session. The next message creates a new session for the selected harness and injects compact handoff context built from the saved transcript.
 
 ## Persistence
 
 `.agents/` is runtime state and is ignored by git.
 
 - `.agents/villagers.json` stores the roster.
-- `.agents/transcripts/<id>.json` stores chat history.
+- `.agents/transcripts/<id>.json` stores chat history, including per-line harness attribution when known.
 - `.agents/usage.json` stores cumulative usage.
 - `.agents/workspace/<id>/` is each villager's private working directory.
 

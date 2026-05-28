@@ -1,5 +1,5 @@
 import type { Villager } from '../../shared/agents'
-import type { AgentSession, SessionHandlers } from './session-types'
+import type { AgentSession, SessionHandlers, SessionHandoff } from './session-types'
 
 /** Canned, persona-flavoured replies used when a selected harness is unavailable. */
 const mockReplies: Record<string, string[]> = {
@@ -28,7 +28,7 @@ const mockReplies: Record<string, string[]> = {
 /**
  * A mock session that streams a canned, persona-appropriate reply token by token.
  */
-export function createMockSession(villager: Villager, handlers: SessionHandlers): AgentSession {
+export function createMockSession(villager: Villager, handlers: SessionHandlers, _handoff: SessionHandoff): AgentSession {
   const pool = mockReplies[villager.id] ?? [`Hello - I'm ${villager.name}.`, 'Tell me more.', "I'm thinking it over."]
   let turn = 0
   const timers = new Set<ReturnType<typeof setTimeout>>()
