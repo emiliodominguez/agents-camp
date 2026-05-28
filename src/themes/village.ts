@@ -339,15 +339,15 @@ function buildScatter(): Placement[] {
     placements.push({ sprite, column, row, offsetX, offsetY })
   }
 
-  // Lamp posts and market signs lining the roads, hand-placed near the hub and
-  // road mouths so the avenues read as travelled.
+  // Lamp posts lining the roads, hand-placed near the hub and road mouths so
+  // the avenues read as travelled. (Hanging-sign sprites were here too, but
+  // their asymmetric posts read as "chopped" next to other props.)
   add('lamp-1', 9, 11)
   add('lamp-2', 15, 11)
   add('lamp-3', 12, 8)
-  add('sign-1', 8, 9)
-  add('sign-2', 17, 13)
   add('lamp-1', 4, 9)
   add('lamp-2', 22, 12)
+  add('lamp-3', 17, 13)
 
   // Workshop clutter clustered around the homes.
   add('anvil', 6, 8)

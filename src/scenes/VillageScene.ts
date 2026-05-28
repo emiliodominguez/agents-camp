@@ -20,9 +20,20 @@ import {
   officeColumns,
   officeRows,
   playerSpawn,
+  seedVillagers,
   tileSize,
   tileToPixel
 } from '../world'
+
+/** Set of "column,row" keys for every seed villager's home (so we know where
+ * baked homes live). A villager spawning on one of these tiles doesn't plant a
+ * new home; the existing baked house is reused. */
+const seedTileKeys = new Set(seedVillagers.map((v) => `${v.tile.column},${v.tile.row}`))
+
+/** Stable tile-key for a cell. */
+function cellKey(cell: { column: number; row: number }): string {
+  return `${cell.column},${cell.row}`
+}
 
 /** Movement speed of the player avatar, in pixels per second. */
 const playerSpeed = 105
@@ -65,15 +76,15 @@ export class VillageScene extends Phaser.Scene {
   private readonly wanderers = new Map<string, WanderState>()
   /** Sprite images for spawned villagers' homes (seed homes are baked into the layout). */
   private readonly spawnedHomes = new Map<string, Phaser.GameObjects.Image>()
-  /** Visual affordances over each empty plot. */
-  private readonly plotMarkers: Phaser.GameObjects.Container[] = []
+  /** Visual affordances over each currently-empty plot, keyed by "column,row". */
+  private readonly plotMarkers = new Map<string, Phaser.GameObjects.Container>()
 
   private furnishing!: Furnishing
 
   /** The villager the player is currently close enough to interact with. */
   private nearbyAgentId: string | undefined
-  /** The empty plot the player is currently standing on, if any. */
-  private nearbyPlotIndex: number | undefined
+  /** "column,row" key of the empty plot the player is currently near, if any. */
+  private nearbyPlotKey: string | undefined
 
   constructor() {
     super('village')
@@ -112,7 +123,7 @@ export class VillageScene extends Phaser.Scene {
     this.registerAnimations()
     this.drawGround()
     this.drawObjects()
-    this.drawEmptyPlots()
+    this.syncPlots()
     this.spawnPlayer()
     this.bindInput()
 
@@ -126,9 +137,18 @@ export class VillageScene extends Phaser.Scene {
     // Sync the scene with the live roster: add/remove characters as the
     // server's roster, spawned, and removed events arrive.
     this.unsubscribers.push(
-      onRoster((next) => this.syncCharacters(next)),
-      onSpawned((villager) => this.addCharacter(villager)),
-      onRemoved((agentId) => this.removeCharacter(agentId)),
+      onRoster((next) => {
+        this.syncCharacters(next)
+        this.syncPlots()
+      }),
+      onSpawned((villager) => {
+        this.addCharacter(villager)
+        this.syncPlots()
+      }),
+      onRemoved((agentId) => {
+        this.removeCharacter(agentId)
+        this.syncPlots()
+      }),
       onAgentStatus((agentId, status) => {
         this.characters.get(agentId)?.setStatus(status)
       })
@@ -291,7 +311,7 @@ export class VillageScene extends Phaser.Scene {
       return
     }
 
-    if (this.nearbyPlotIndex !== undefined) {
+    if (this.nearbyPlotKey !== undefined) {
       setSpawnOpen(true)
     }
   }
@@ -323,11 +343,44 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Place a soft marker (a glowing flowers tuft + a floating "+" sign) on each
-   * empty plot, so the player can see where new villagers can be spawned.
+   * Currently-active spawn plots: the hand-placed ones, plus any seed home
+   * whose villager isn't present in the live roster.
+   *
+   * @returns Cells the player can spawn a villager on.
    */
-  private drawEmptyPlots(): void {
-    for (const plot of emptyPlots) {
+  private activePlots(): Array<{ column: number; row: number }> {
+    const occupied = new Set(villagers().map((v) => cellKey(v.tile)))
+    const seedPlots = seedVillagers
+      .filter((seed) => !occupied.has(cellKey(seed.tile)))
+      .map((seed) => seed.tile)
+
+    return [...emptyPlots, ...seedPlots]
+  }
+
+  /**
+   * Add or remove plot markers so the visible set matches `activePlots()`.
+   * Called once at scene create and again on every roster change.
+   */
+  private syncPlots(): void {
+    const next = this.activePlots()
+    const nextKeys = new Set(next.map(cellKey))
+
+    // Remove markers for plots that are no longer active.
+    for (const [key, marker] of this.plotMarkers) {
+      if (!nextKeys.has(key)) {
+        marker.destroy()
+        this.plotMarkers.delete(key)
+      }
+    }
+
+    // Add markers for newly-active plots.
+    for (const plot of next) {
+      const key = cellKey(plot)
+
+      if (this.plotMarkers.has(key)) {
+        continue
+      }
+
       const { x, y } = tileToPixel(plot.column, plot.row)
       const container = this.add.container(x, y)
 
@@ -346,7 +399,6 @@ export class VillageScene extends Phaser.Scene {
       container.add([flowers, plus])
       container.setDepth(plot.row + 0.5)
 
-      // Gentle bob so the markers feel alive without being noisy.
       this.tweens.add({
         targets: plus,
         y: plus.y - 3,
@@ -356,7 +408,7 @@ export class VillageScene extends Phaser.Scene {
         ease: 'Sine.inOut'
       })
 
-      this.plotMarkers.push(container)
+      this.plotMarkers.set(key, container)
     }
   }
 
@@ -438,9 +490,9 @@ export class VillageScene extends Phaser.Scene {
     this.characters.set(villager.id, character)
     this.wanderers.set(villager.id, { home: { x, y }, target: undefined, pause: Math.random() * 2 })
 
-    // Spawned villagers get a tent drawn dynamically; seed villagers already
-    // have their homes baked into the layout.
-    if (!this.isSeedVillager(villager.id)) {
+    // Plant a home only when the villager isn't standing on a seed tile —
+    // those tiles already have a baked house from the original layout.
+    if (!seedTileKeys.has(cellKey(villager.tile))) {
       this.plantHome(villager)
     }
   }
@@ -480,11 +532,6 @@ export class VillageScene extends Phaser.Scene {
     image.setOrigin(0.5, 1)
     image.setDepth(villager.tile.row - 1)
     this.spawnedHomes.set(villager.id, image)
-  }
-
-  /** Whether an id belongs to one of the seed villagers (whose homes are baked in). */
-  private isSeedVillager(id: string): boolean {
-    return ['planner', 'builder', 'reviewer', 'explorer'].includes(id)
   }
 
   /** Create the player avatar at the spawn tile. */
@@ -604,23 +651,17 @@ export class VillageScene extends Phaser.Scene {
       }
     }
 
-    let plotIndex: number | undefined
+    let closestPlot: { column: number; row: number } | undefined
     let plotDistance = interactionRadius
 
     if (closestId === undefined) {
-      for (let index = 0; index < emptyPlots.length; index += 1) {
-        const plot = emptyPlots[index]
-
-        if (plot === undefined) {
-          continue
-        }
-
+      for (const plot of this.activePlots()) {
         const { x, y } = tileToPixel(plot.column, plot.row)
         const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y)
 
         if (distance < plotDistance) {
           plotDistance = distance
-          plotIndex = index
+          closestPlot = plot
         }
       }
     }
@@ -638,9 +679,11 @@ export class VillageScene extends Phaser.Scene {
       setNearbyAgent(closestId)
     }
 
-    if (plotIndex !== this.nearbyPlotIndex) {
-      this.nearbyPlotIndex = plotIndex
-      setNearbyPlot(plotIndex !== undefined ? emptyPlots[plotIndex] : undefined)
+    const plotKey = closestPlot !== undefined ? cellKey(closestPlot) : undefined
+
+    if (plotKey !== this.nearbyPlotKey) {
+      this.nearbyPlotKey = plotKey
+      setNearbyPlot(closestPlot)
     }
   }
 

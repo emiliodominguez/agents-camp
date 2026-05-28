@@ -5,7 +5,8 @@ import type {
   ChatLine,
   ClientMessage,
   ServerMessage,
-  SkillSummary
+  SkillSummary,
+  UsageSnapshot
 } from '../../shared/protocol'
 
 /**
@@ -25,6 +26,7 @@ type HistoryListener = (agentId: string, lines: ChatLine[]) => void
 type ToolListener = (agentId: string, tool: { name: string; input: unknown; summary: string }) => void
 type QuestionListener = (agentId: string, question: AgentQuestion) => void
 type SkillsListener = (skills: SkillSummary[]) => void
+type UsageListener = (usage: UsageSnapshot) => void
 
 const statusListeners = new Set<StatusListener>()
 const tokenListeners = new Set<TokenListener>()
@@ -37,6 +39,7 @@ const historyListeners = new Set<HistoryListener>()
 const toolListeners = new Set<ToolListener>()
 const questionListeners = new Set<QuestionListener>()
 const skillsListeners = new Set<SkillsListener>()
+const usageListeners = new Set<UsageListener>()
 
 let socket: WebSocket | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -103,6 +106,10 @@ function connect(): void {
     } else if (message.type === 'skills') {
       for (const listener of skillsListeners) {
         listener(message.skills)
+      }
+    } else if (message.type === 'usage') {
+      for (const listener of usageListeners) {
+        listener(message.usage)
       }
     }
   })
@@ -182,6 +189,11 @@ export function sendSpawn(
  */
 export function sendRemove(agentId: string): void {
   sendMessage({ type: 'remove', agentId })
+}
+
+/** Ask the server to add the starter villagers (idempotent). */
+export function sendSeed(): void {
+  sendMessage({ type: 'seed' })
 }
 
 /**
@@ -269,4 +281,10 @@ export function onSkills(listener: SkillsListener): () => void {
   skillsListeners.add(listener)
 
   return () => skillsListeners.delete(listener)
+}
+
+export function onUsage(listener: UsageListener): () => void {
+  usageListeners.add(listener)
+
+  return () => usageListeners.delete(listener)
 }

@@ -22,8 +22,21 @@ export interface SessionHandlers {
   onTool: (event: { name: string; input: unknown; summary: string }) => void
   /** The agent asked a multi-choice question (AskUserQuestion). */
   onQuestion: (event: AgentQuestionEvent) => void
+  /** A turn completed — token counts, turn count, timing for usage stats. */
+  onResult?: (event: ResultEvent) => void
   /** Something failed. */
   onError: (message: string) => void
+}
+
+/** Per-turn result event for usage tracking. */
+export interface ResultEvent {
+  /** Number of turns this result spans (always 1 for our use, but echoed). */
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  cacheCreateTokens: number
+  cacheReadTokens: number
+  durationMs: number
 }
 
 /** A multi-choice question yielded by the AskUserQuestion tool. */
@@ -269,6 +282,19 @@ function createLiveSession(villager: Villager, handlers: SessionHandlers, model:
         } else if (message.type === 'result') {
           const final = message.subtype === 'success' ? message.result : current
           handlers.onReply(final)
+
+          if (message.subtype === 'success') {
+            const usage = message.usage
+            handlers.onResult?.({
+              turns: message.num_turns,
+              inputTokens: usage.input_tokens ?? 0,
+              outputTokens: usage.output_tokens ?? 0,
+              cacheCreateTokens: usage.cache_creation_input_tokens ?? 0,
+              cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+              durationMs: message.duration_ms
+            })
+          }
+
           handlers.onStatus('idle')
         }
       }

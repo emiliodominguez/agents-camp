@@ -15,6 +15,7 @@ import {
   onRoster,
   onSkills,
   onSpawned,
+  onUsage,
   startAgentClient
 } from './services/agentClient'
 import {
@@ -32,6 +33,7 @@ import {
 } from './overlay/state'
 import { addVillager, removeVillager, setRoster } from './state/roster'
 import { setSkills, setSkillsOpen, skillsOpen } from './state/skills'
+import { setUsage, setUsageOpen, usageOpen } from './state/usage'
 import { VillageScene } from './scenes/VillageScene'
 import { Overlay } from './overlay/Overlay'
 
@@ -72,12 +74,16 @@ onSpawned((villager) => addVillager(villager))
 onRemoved((agentId) => removeVillager(agentId))
 onHistory((agentId, lines) => setChatHistory(agentId, lines))
 onSkills((list) => setSkills(list))
+onUsage((snapshot) => setUsage(snapshot))
 startAgentClient()
 
 // Escape closes whichever overlay panel is open.
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    if (skillsOpen()) {
+    if (usageOpen()) {
+      event.preventDefault()
+      setUsageOpen(false)
+    } else if (skillsOpen()) {
       event.preventDefault()
       setSkillsOpen(false)
     } else if (spawnOpen()) {

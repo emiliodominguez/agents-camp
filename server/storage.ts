@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { defaultSeed, type Villager } from '../shared/agents'
-import type { ChatLine } from '../shared/protocol'
+import type { Villager } from '../shared/agents'
+import type { ChatLine, VillagerUsage } from '../shared/protocol'
 
 /**
  * On-disk source of truth for the camp's roster and chat transcripts.
@@ -21,6 +21,7 @@ const dataDir = join(here, '..', '.agents')
 const chatsDir = join(dataDir, 'chats')
 const workspacesDir = join(dataDir, 'workspace')
 const rosterPath = join(dataDir, 'villagers.json')
+const usagePath = join(dataDir, 'usage.json')
 
 mkdirSync(chatsDir, { recursive: true })
 mkdirSync(workspacesDir, { recursive: true })
@@ -57,26 +58,25 @@ export function deleteWorkspace(agentId: string): void {
 }
 
 /**
- * Load the roster from disk, seeding the file with the default villagers on
- * first run.
+ * Load the roster from disk. Returns an empty roster on first run — seeding
+ * the default villagers is now an explicit UI action so newbies opt in.
  *
  * @returns The current villagers.
  */
 export function loadRoster(): Villager[] {
   if (!existsSync(rosterPath)) {
-    const seed = defaultSeed()
-    saveRoster(seed)
+    saveRoster([])
 
-    return seed
+    return []
   }
 
   try {
     const raw = readFileSync(rosterPath, 'utf8')
     const parsed = JSON.parse(raw) as Villager[]
 
-    return Array.isArray(parsed) ? parsed : defaultSeed()
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    return defaultSeed()
+    return []
   }
 }
 
@@ -142,9 +142,42 @@ export function deleteTranscript(agentId: string): void {
   }
 }
 
+/**
+ * Load the all-time usage counters from disk.
+ *
+ * @returns Per-villager counters keyed by agentId, or an empty map.
+ */
+export function loadUsage(): Map<string, VillagerUsage> {
+  if (!existsSync(usagePath)) {
+    return new Map()
+  }
+
+  try {
+    const raw = readFileSync(usagePath, 'utf8')
+    const parsed = JSON.parse(raw) as VillagerUsage[]
+
+    if (!Array.isArray(parsed)) {
+      return new Map()
+    }
+
+    return new Map(parsed.map((entry) => [entry.agentId, entry]))
+  } catch {
+    return new Map()
+  }
+}
+
+/**
+ * Save usage counters to disk.
+ *
+ * @param usage - Per-villager counters keyed by agentId.
+ */
+export function saveUsage(usage: Map<string, VillagerUsage>): void {
+  writeFileSync(usagePath, JSON.stringify([...usage.values()], null, 2), 'utf8')
+}
+
 /** Sanity check during boot. */
 export function describeStorage(): string {
   const chatCount = readdirSync(chatsDir).filter((file) => file.endsWith('.json')).length
 
-  return `roster=${rosterPath}, chats=${chatsDir} (${chatCount} transcripts)`
+  return `roster=${rosterPath}, chats=${chatsDir} (${chatCount} transcripts), usage=${usagePath}`
 }

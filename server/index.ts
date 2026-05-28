@@ -2,8 +2,8 @@ import { createServer } from 'node:http'
 
 import { WebSocketServer, type WebSocket } from 'ws'
 
-import type { Villager } from '../shared/agents'
-import type { ClientMessage, ServerMessage } from '../shared/protocol'
+import { defaultSeed, type Villager } from '../shared/agents'
+import type { ClientMessage, ServerMessage, UsageSnapshot, VillagerUsage } from '../shared/protocol'
 import { authMode, createSession, isLive, type AgentSession } from './agentSession'
 import { listSkills } from './skills'
 import {
@@ -14,7 +14,9 @@ import {
   ensureWorkspace,
   loadRoster,
   loadTranscript,
-  saveRoster
+  loadUsage,
+  saveRoster,
+  saveUsage
 } from './storage'
 
 // Load a local .env (for CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY) if
@@ -43,6 +45,26 @@ const webSocketServer = new WebSocketServer({ server: httpServer, path: '/agents
 
 /** The current roster, loaded once on boot; saves on every mutation. */
 let roster: Villager[] = loadRoster()
+
+/** All-time per-villager usage, keyed by agentId. Persisted on every update. */
+const usage = loadUsage()
+
+/** Build the wire snapshot from the in-memory usage map. */
+function usageSnapshot(): UsageSnapshot {
+  const villagers: VillagerUsage[] = [...usage.values()]
+  const totals = villagers.reduce(
+    (accumulator, entry) => ({
+      turns: accumulator.turns + entry.turns,
+      inputTokens: accumulator.inputTokens + entry.inputTokens,
+      outputTokens: accumulator.outputTokens + entry.outputTokens,
+      cacheCreateTokens: accumulator.cacheCreateTokens + entry.cacheCreateTokens,
+      cacheReadTokens: accumulator.cacheReadTokens + entry.cacheReadTokens
+    }),
+    { turns: 0, inputTokens: 0, outputTokens: 0, cacheCreateTokens: 0, cacheReadTokens: 0 }
+  )
+
+  return { villagers, totals, at: Date.now() }
+}
 
 /** Every connected socket, so roster broadcasts reach all open tabs. */
 const sockets = new Set<WebSocket>()
@@ -159,6 +181,32 @@ webSocketServer.on('connection', (socket) => {
           })
           send(socket, { type: 'question', agentId, question: { ...event } })
         },
+        onResult: (event) => {
+          const current = usage.get(agentId) ?? {
+            agentId,
+            name: villager.name,
+            turns: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreateTokens: 0,
+            cacheReadTokens: 0
+          }
+
+          const updated: VillagerUsage = {
+            ...current,
+            name: villager.name,
+            turns: current.turns + event.turns,
+            inputTokens: current.inputTokens + event.inputTokens,
+            outputTokens: current.outputTokens + event.outputTokens,
+            cacheCreateTokens: current.cacheCreateTokens + event.cacheCreateTokens,
+            cacheReadTokens: current.cacheReadTokens + event.cacheReadTokens,
+            lastActiveAt: Date.now()
+          }
+
+          usage.set(agentId, updated)
+          saveUsage(usage)
+          broadcast({ type: 'usage', usage: usageSnapshot() })
+        },
         onError: (message) => send(socket, { type: 'error', agentId, message })
       },
       workspace
@@ -171,6 +219,7 @@ webSocketServer.on('connection', (socket) => {
 
   send(socket, { type: 'hello', live: isLive() })
   send(socket, { type: 'roster', villagers: roster })
+  send(socket, { type: 'usage', usage: usageSnapshot() })
 
   void (async () => {
     const skills = await listSkills()
@@ -235,6 +284,21 @@ webSocketServer.on('connection', (socket) => {
       roster = [...roster, villager]
       saveRoster(roster)
       broadcast({ type: 'spawned', villager })
+    } else if (parsed.type === 'seed') {
+      const seeds = defaultSeed()
+      const existingIds = new Set(roster.map((v) => v.id))
+      const additions = seeds.filter((s) => !existingIds.has(s.id))
+
+      if (additions.length === 0) {
+        return
+      }
+
+      roster = [...roster, ...additions]
+      saveRoster(roster)
+
+      for (const villager of additions) {
+        broadcast({ type: 'spawned', villager })
+      }
     } else if (parsed.type === 'answer') {
       const session = sessions.get(parsed.agentId)
 
@@ -279,9 +343,12 @@ webSocketServer.on('connection', (socket) => {
       saveRoster(roster)
       deleteTranscript(parsed.agentId)
       deleteWorkspace(parsed.agentId)
+      usage.delete(parsed.agentId)
+      saveUsage(usage)
       sessions.get(parsed.agentId)?.close()
       sessions.delete(parsed.agentId)
       broadcast({ type: 'removed', agentId: parsed.agentId })
+      broadcast({ type: 'usage', usage: usageSnapshot() })
     }
   })
 

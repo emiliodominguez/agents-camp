@@ -13,6 +13,35 @@ import type { Villager } from './agents'
 /** Lifecycle state of a villager, mirrored from agents.ts. */
 export type AgentStatus = 'idle' | 'working' | 'talking'
 
+/** Token / turn counts for one villager. */
+export interface VillagerUsage {
+  agentId: string
+  name: string
+  /** Number of completed turns. */
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  cacheCreateTokens: number
+  cacheReadTokens: number
+  /** Last assistant-completion epoch ms, or undefined if never spoken. */
+  lastActiveAt?: number
+}
+
+/** A snapshot of usage across the whole camp. */
+export interface UsageSnapshot {
+  /** Per-villager counters (all-time, since the server first saw them). */
+  villagers: VillagerUsage[]
+  totals: {
+    turns: number
+    inputTokens: number
+    outputTokens: number
+    cacheCreateTokens: number
+    cacheReadTokens: number
+  }
+  /** When the snapshot was generated (epoch ms). */
+  at: number
+}
+
 /** A skill the villagers can call (read from ~/.claude/skills + project skills). */
 export interface SkillSummary {
   /** Skill name (folder name). */
@@ -87,6 +116,10 @@ export type ClientMessage =
       tile: { column: number; row: number }
     }
   | {
+      /** Add the default starter villagers (idempotent — no-op if already present). */
+      type: 'seed'
+    }
+  | {
       /** Remove a villager. */
       type: 'remove'
       agentId: string
@@ -133,6 +166,11 @@ export type ServerMessage =
       /** The list of skills available for villagers to call. */
       type: 'skills'
       skills: SkillSummary[]
+    }
+  | {
+      /** Aggregate usage stats (sent on connect and after every completed turn). */
+      type: 'usage'
+      usage: UsageSnapshot
     }
   | {
       /** A villager's lifecycle state changed. Drives the status bubble. */

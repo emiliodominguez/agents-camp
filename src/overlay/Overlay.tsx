@@ -6,11 +6,13 @@ import {
   sendAnswer,
   sendChat,
   sendRemove,
+  sendSeed,
   sendSpawn,
   sendUpdate
 } from '../services/agentClient'
 import { villagers } from '../state/roster'
 import { setSkillsOpen, skills, skillsOpen } from '../state/skills'
+import { setUsageOpen, usage, usageOpen } from '../state/usage'
 import type { AgentStatus, ChatLine } from '../../shared/protocol'
 import {
   agentStatuses,
@@ -70,41 +72,62 @@ export function Overlay() {
       <Show when={chatAgent()} keyed>{(agent) => <ChatPanel agent={agent} />}</Show>
       <Show when={spawnOpen()}><SpawnDialog /></Show>
       <Show when={skillsOpen()}><SkillsPanel /></Show>
+      <Show when={usageOpen()}><UsagePanel /></Show>
     </>
   )
 }
 
-/** The top-left roster panel — live status per villager + skills button. */
+/** The top-left roster panel — live status per villager + skills/seed buttons. */
 function RosterPanel() {
   return (
     <div class="panel roster">
       <h1>{activeTheme.name}</h1>
 
-      <ul>
-        <For each={villagers()}>
-          {(villager) => {
-            const status = (): AgentStatus => agentStatuses()[villager.id] ?? 'idle'
+      <Show
+        when={villagers().length > 0}
+        fallback={
+          <div class="roster-empty">
+            <p>Your camp is empty.</p>
+            <p class="hint">Walk to a glowing <span class="plus">+</span> and press <kbd>E</kbd> to spawn your own villager, or:</p>
+            <button type="button" class="roster-seed" onClick={() => sendSeed()}>
+              + Seed starter villagers
+            </button>
+            <p class="hint">(Planner, Builder, Reviewer, Explorer)</p>
+          </div>
+        }
+      >
+        <ul>
+          <For each={villagers()}>
+            {(villager) => {
+              const status = (): AgentStatus => agentStatuses()[villager.id] ?? 'idle'
 
-            return (
-              <li>
-                <span class="dot" classList={{ active: status() !== 'idle' }} style={{ background: villager.dotColor }} />
-                <span class="name">{villager.name}</span>
-                <span class={`status ${status()}`}>{statusWord[status()]}</span>
-              </li>
-            )
-          }}
-        </For>
-      </ul>
+              return (
+                <li>
+                  <span class="dot" classList={{ active: status() !== 'idle' }} style={{ background: villager.dotColor }} />
+                  <span class="name">{villager.name}</span>
+                  <span class={`status ${status()}`}>{statusWord[status()]}</span>
+                </li>
+              )
+            }}
+          </For>
+        </ul>
 
-      <p class="hint">Walk with WASD or the arrow keys.</p>
+        <p class="hint">Walk with WASD or the arrow keys.</p>
+      </Show>
+
       <p class="conn" classList={{ live: liveMode() }}>
         <span class="conn-dot" />
         {liveMode() ? 'Agents live (Claude)' : 'Agents in mock mode'}
       </p>
 
-      <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
-        Skills ({skills().length})
-      </button>
+      <div class="roster-actions">
+        <button type="button" class="roster-action" onClick={() => setSkillsOpen(true)}>
+          Skills ({skills().length})
+        </button>
+        <button type="button" class="roster-action" onClick={() => setUsageOpen(true)}>
+          Usage
+        </button>
+      </div>
     </div>
   )
 }
@@ -516,6 +539,106 @@ function SkillsPanel() {
           )}
         </For>
       </ul>
+    </div>
+  )
+}
+
+/** Format a token count with thousands separators. */
+function formatTokens(n: number): string {
+  return n.toLocaleString('en-US')
+}
+
+/** Format ms-ago as "just now" / "5m ago" / "2h ago" / "Mon HH:MM". */
+function formatAgo(at: number | undefined): string {
+  if (at === undefined) {
+    return '—'
+  }
+
+  const seconds = Math.floor((Date.now() - at) / 1000)
+
+  if (seconds < 30) return 'just now'
+  if (seconds < 90) return '1m ago'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+
+  return new Date(at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+/** API usage panel — per-villager tokens and turns, plus camp totals. */
+function UsagePanel() {
+  return (
+    <div class="panel usage">
+      <header>
+        <strong>API usage</strong>
+        <span class="usage-subtitle">Subscription path — no per-call dollar cost from the API.</span>
+        <button type="button" class="close" onClick={() => setUsageOpen(false)} aria-label="Close (Esc)">
+          ✕
+        </button>
+      </header>
+
+      <Show
+        when={usage() && (usage()?.villagers.length ?? 0) > 0}
+        fallback={<p class="usage-empty">No usage yet — talk to a villager to start counting.</p>}
+      >
+        {(() => {
+          const snapshot = usage() as NonNullable<ReturnType<typeof usage>>
+
+          return (
+            <>
+              <div class="usage-totals">
+                <div class="usage-stat">
+                  <span class="usage-stat-label">Turns</span>
+                  <span class="usage-stat-value">{snapshot.totals.turns}</span>
+                </div>
+                <div class="usage-stat">
+                  <span class="usage-stat-label">Input</span>
+                  <span class="usage-stat-value">{formatTokens(snapshot.totals.inputTokens)}</span>
+                </div>
+                <div class="usage-stat">
+                  <span class="usage-stat-label">Output</span>
+                  <span class="usage-stat-value">{formatTokens(snapshot.totals.outputTokens)}</span>
+                </div>
+                <div class="usage-stat">
+                  <span class="usage-stat-label">Cache create</span>
+                  <span class="usage-stat-value">{formatTokens(snapshot.totals.cacheCreateTokens)}</span>
+                </div>
+                <div class="usage-stat">
+                  <span class="usage-stat-label">Cache read</span>
+                  <span class="usage-stat-value">{formatTokens(snapshot.totals.cacheReadTokens)}</span>
+                </div>
+              </div>
+
+              <ul class="usage-list">
+                <For each={snapshot.villagers}>
+                  {(entry) => (
+                    <li>
+                      <div class="usage-name">{entry.name}</div>
+                      <div class="usage-meta">
+                        <span>{entry.turns} turn{entry.turns === 1 ? '' : 's'}</span>
+                        <span class="usage-dot">·</span>
+                        <span title="input tokens">↑ {formatTokens(entry.inputTokens)}</span>
+                        <span class="usage-dot">·</span>
+                        <span title="output tokens">↓ {formatTokens(entry.outputTokens)}</span>
+                        <Show when={entry.cacheReadTokens > 0}>
+                          <span class="usage-dot">·</span>
+                          <span title="cache read">⚡ {formatTokens(entry.cacheReadTokens)}</span>
+                        </Show>
+                        <span class="usage-dot">·</span>
+                        <span class="usage-ago">{formatAgo(entry.lastActiveAt)}</span>
+                      </div>
+                    </li>
+                  )}
+                </For>
+              </ul>
+
+              <p class="usage-hint">
+                Token totals are cumulative since the server first counted. Cache reads draw on Claude's prompt-cache,
+                which can dramatically reduce input cost on repeat turns.
+              </p>
+            </>
+          )
+        })()}
+      </Show>
     </div>
   )
 }
