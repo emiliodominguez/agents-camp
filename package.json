@@ -10,6 +10,8 @@
     "dev:server": "tsx watch server/index.ts",
     "server": "tsx server/index.ts",
     "build": "tsc && vite build",
+    "check": "pnpm build && pnpm exec tsc -p tsconfig.server.json && pnpm check:assets",
+    "check:assets": "tsx scripts/check-assets.ts",
     "preview": "vite preview"
   },
   "dependencies": {

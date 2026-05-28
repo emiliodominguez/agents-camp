@@ -32,6 +32,8 @@ Add another harness by adding:
 - a server adapter in `server/harnesses/<id>-session.ts`
 - the adapter to `server/harnesses/index.ts`
 
+See `docs/harnesses.md` for the complete harness contract.
+
 Currently supported:
 
 - **Claude Code** (`claude`) — live when `CLAUDE_CODE_OAUTH_TOKEN`,
@@ -74,6 +76,9 @@ Current live art uses CraftPix village assets plus field-pack foliage, fences,
 camp props, flags, and campfires. Curated pack extracts live in
 `public/assets/packs/`.
 
+See `docs/assets-and-world.md` for asset rules, retained packs, removed packs,
+and validation.
+
 ## File Layout
 
 Files use kebab-case unless they are conventional entry/config names such as
@@ -85,6 +90,8 @@ Files use kebab-case unless they are conventional entry/config names such as
 - `src/state/` - shared client signals
 - `server/harnesses/` - one runtime adapter per agent harness
 - `shared/harnesses/` - shared harness metadata by harness id
+
+See `docs/architecture.md` for the runtime data flow and persistence model.
 
 ## Run
 
@@ -105,4 +112,8 @@ Configuration lives in `.env` (copy from `.env.example`):
 - `CODEX_BIN` and `CODEX_AGENT_MODEL` configure the Codex harness.
 - `AGENT_PORT` changes the backend WebSocket port.
 
-Other scripts: `pnpm dev:web`, `pnpm dev:server`, `pnpm build`.
+Other scripts: `pnpm dev:web`, `pnpm dev:server`, `pnpm build`,
+`pnpm check`, and `pnpm check:assets`.
+
+See `docs/development.md` for local setup, verification, runtime state, and
+commit hygiene.

@@ -36,3 +36,5 @@ The live theme (`src/themes/village.ts`) loads citizens from
 `/assets/themes/village/`. The field foliage and camp sprites copied from pack
 665131 live under
 `/assets/themes/village/objects/field/`.
+
+See `docs/assets-and-world.md` for the full asset policy and validation flow.
