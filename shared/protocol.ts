@@ -114,6 +114,10 @@ export type ClientMessage =
       persona: string
       sprite: string
       tile: { column: number; row: number }
+      /** Optional dot colour (CSS hex); auto-picked if omitted. */
+      dotColor?: string
+      /** Optional capability scope; defaults to 'full'. */
+      toolScope?: 'conversational' | 'read-only' | 'full'
     }
   | {
       /** Add the default starter villagers (idempotent — no-op if already present). */

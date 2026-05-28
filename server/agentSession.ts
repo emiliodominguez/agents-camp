@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
-import { sharedVoice, type Villager } from '../shared/agents'
+import { buildSharedVoice, type ToolScope, type Villager } from '../shared/agents'
 import type { AgentStatus } from '../shared/protocol'
 
 /**
@@ -121,6 +121,27 @@ class MessageQueue {
 }
 
 /**
+ * Map a villager's tool-scope choice to a concrete SDK `allowedTools` list.
+ * - conversational: no tools (pure chat).
+ * - read-only: can browse files but not change them.
+ * - full: every tool, including Bash and Skill (matches Claude Code default).
+ *
+ * @param scope - The villager's tool scope.
+ * @returns The SDK `allowedTools` array.
+ */
+function toolsForScope(scope: ToolScope): string[] {
+  if (scope === 'conversational') {
+    return ['AskUserQuestion']
+  }
+
+  if (scope === 'read-only') {
+    return ['Read', 'Glob', 'Grep', 'AskUserQuestion']
+  }
+
+  return ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Skill', 'AskUserQuestion']
+}
+
+/**
  * Brief one-line summary of a tool call, suitable for compact chat display.
  *
  * @param name - Tool name.
@@ -192,9 +213,9 @@ function createLiveSession(villager: Villager, handlers: SessionHandlers, model:
     prompt: prompt(),
     options: {
       model,
-      systemPrompt: `${villager.persona}\n\n${sharedVoice}`,
+      systemPrompt: `${villager.persona}\n\n${buildSharedVoice(villager.toolScope ?? 'full')}`,
       cwd,
-      allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Skill', 'AskUserQuestion'],
+      allowedTools: toolsForScope(villager.toolScope ?? 'full'),
       permissionMode: 'bypassPermissions',
       includePartialMessages: true,
       // Load user and project skills (~/.claude/skills and .claude/skills) so

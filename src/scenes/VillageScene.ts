@@ -101,13 +101,17 @@ export class VillageScene extends Phaser.Scene {
     })
 
     // Each villager has six directional strips (down/side/up × idle/walk).
+    // The spec's idle/walk sources can differ — e.g. citizens use `_idle` &
+    // `_walk`, archers reuse `_idle` for both, enemies use `_run`.
     for (const character of activeTheme.characters) {
       for (const direction of ['d', 's', 'u'] as const) {
         for (const state of ['idle', 'walk'] as const) {
-          this.load.spritesheet(`${character.key}-${direction}-${state}`, `${character.pathPrefix}-${direction}-${state}.png`, {
-            frameWidth: character.frameSize,
-            frameHeight: character.frameSize
-          })
+          const source = character[state]
+          this.load.spritesheet(
+            `${character.key}-${direction}-${state}`,
+            `${character.pathPrefix}/${direction}${source.suffix}.png`,
+            { frameWidth: character.frameSize, frameHeight: character.frameSize }
+          )
         }
       }
     }
@@ -420,8 +424,8 @@ export class VillageScene extends Phaser.Scene {
     for (const character of activeTheme.characters) {
       for (const direction of ['d', 's', 'u'] as const) {
         const states: Array<{ state: 'idle' | 'walk'; frames: number; rate: number }> = [
-          { state: 'idle', frames: character.idleFrames, rate: 4 },
-          { state: 'walk', frames: character.walkFrames, rate: 8 }
+          { state: 'idle', frames: character.idle.frames, rate: 4 },
+          { state: 'walk', frames: character.walk.frames, rate: 8 }
         ]
 
         for (const { state, frames, rate } of states) {

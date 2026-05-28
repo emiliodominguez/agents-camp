@@ -168,18 +168,17 @@ export function requestHistory(agentId: string): void {
 /**
  * Ask the server to spawn a new villager.
  *
- * @param name - Display name.
- * @param persona - Role persona (becomes the system prompt).
- * @param sprite - Character sprite key (e.g. `citizen-3`).
- * @param tile - Tile to spawn on.
+ * @param options - Spawn options.
  */
-export function sendSpawn(
-  name: string,
-  persona: string,
-  sprite: string,
+export function sendSpawn(options: {
+  name: string
+  persona: string
+  sprite: string
   tile: { column: number; row: number }
-): void {
-  sendMessage({ type: 'spawn', name, persona, sprite, tile })
+  dotColor?: string
+  toolScope?: 'conversational' | 'read-only' | 'full'
+}): void {
+  sendMessage({ type: 'spawn', ...options })
 }
 
 /**

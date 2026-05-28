@@ -962,7 +962,8 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(440px, calc(100vw - 32px));
+  width: min(580px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -975,6 +976,7 @@ body {
   padding: 12px 14px;
   border-bottom: 1px solid #2c3450;
   font-size: 13px;
+  flex: none;
 }
 
 .spawn header .close {
@@ -996,21 +998,26 @@ body {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  overflow-y: auto;
 }
 
-.spawn label {
+/* Top row: name + live preview side-by-side. */
+.spawn .spawn-row {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.spawn .spawn-name {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #9aa4c0;
-}
-
-.spawn label > span {
-  font-size: 10px;
 }
 
 .spawn input,
@@ -1033,10 +1040,147 @@ body {
   border-color: #4a5a8c;
 }
 
-.spawn .sprite-picker {
+.spawn-persona {
+  margin-top: 10px;
+  width: 100%;
+}
+
+/* Sprite preview pane */
+
+.sprite-preview {
+  width: 110px;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  flex-wrap: wrap;
+  padding: 8px;
+  transition: background 0.2s;
+}
+
+.sprite-preview-empty {
+  color: #6b7390;
+  font-size: 11px;
+}
+
+.sprite-preview-frame {
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+
+.sprite-preview-frame img {
+  image-rendering: pixelated;
+  height: 64px;
+  width: auto;
+  display: block;
+  animation: sprite-walk calc(var(--frames, 4) * 220ms) steps(var(--frames, 4)) infinite;
+  /* Crop to one frame: width = frame-size, scaled to 64px box. */
+  object-fit: none;
+  object-position: 0 0;
+  transform-origin: top left;
+  /* Scale to fit a 64px box, regardless of source frame size. */
+  transform: scale(calc(64 / var(--frame-size, 48)));
+}
+
+.sprite-preview-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #c9d4ff;
+  text-transform: uppercase;
+}
+
+@keyframes sprite-walk {
+  from { object-position: 0 0; }
+  to { object-position: calc(-1 * var(--frame-size, 48) * var(--frames, 4)) 0; }
+}
+
+/* Fieldsets — sections within the form. */
+
+.spawn-field {
+  margin: 0;
+  border: 1px solid #2c3450;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(17, 20, 28, 0.5);
+}
+
+.spawn-field legend {
+  padding: 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa4c0;
+}
+
+/* Collapsible sections within a fieldset. */
+
+.spawn-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spawn-section {
+  background: #0d1018;
+  border: 1px solid #1f2638;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.spawn-section summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #c9d4ff;
+  user-select: none;
+}
+
+.spawn-section summary::-webkit-details-marker { display: none; }
+
+.spawn-section summary::before {
+  content: '▸';
+  color: #6b7390;
+  font-size: 10px;
+  width: 10px;
+  transition: transform 0.15s;
+}
+
+.spawn-section[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.spawn-section[open] summary {
+  background: #131825;
+  border-bottom: 1px solid #1f2638;
+}
+
+.spawn-section .section-title {
+  flex: 1;
+}
+
+.spawn-section .section-count {
+  font-size: 10px;
+  color: #6b7390;
+  background: #1f2638;
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+
+/* Sprite picker (now inside a collapsible section). */
+
+.spawn .sprite-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 6px;
+  padding: 8px;
 }
 
 .spawn .sprite-option {
@@ -1044,11 +1188,13 @@ body {
   border: 2px solid #2c3450;
   border-radius: 6px;
   cursor: pointer;
-  padding: 4px;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 56px;
+  padding: 6px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  color: #c9d4ff;
 }
 
 .spawn .sprite-option:hover {
@@ -1062,11 +1208,137 @@ body {
 
 .spawn .sprite-option img {
   image-rendering: pixelated;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   object-fit: none;
   object-position: 0 0;
+  /* Source frames may be 48 or 96 px — scale to fit the 44 px box. */
+  transform: scale(calc(44 / var(--frame-size, 48)));
+  transform-origin: top left;
 }
+
+.spawn .sprite-option .sprite-label {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: inherit;
+}
+
+/* Colour palette */
+
+.color-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+}
+
+.color-option:hover {
+  transform: scale(1.1);
+}
+
+.color-option.active {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Tool-scope radio cards */
+
+.scope-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scope-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #11141c;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 8px 10px;
+  font: inherit;
+  color: #e6e9f0;
+  text-align: left;
+}
+
+.scope-option:hover {
+  border-color: #4a5a8c;
+}
+
+.scope-option.active {
+  border-color: #8aab5a;
+  background: #1d2a18;
+}
+
+.scope-radio {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid #4a5a8c;
+  margin-top: 3px;
+  flex: none;
+  transition: all 0.15s;
+}
+
+.scope-option.active .scope-radio {
+  border-color: #8aab5a;
+  background: #8aab5a;
+  box-shadow: inset 0 0 0 2px #1d2a18;
+}
+
+.scope-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scope-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scope-description {
+  font-size: 11px;
+  color: #9aa4c0;
+}
+
+/* Template-section picker */
+
+.template-section .template-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.template-option {
+  background: #131825;
+  border: 1px solid #2c3450;
+  border-radius: 14px;
+  color: #c9d4ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.template-option:hover {
+  background: #1d2a18;
+  border-color: #8aab5a;
+}
+
+/* Actions */
 
 .spawn .spawn-actions {
   display: flex;

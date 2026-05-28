@@ -480,25 +480,67 @@ function buildScatter(): Placement[] {
   return placements
 }
 
-/**
- * One CraftPix citizen per agent (and the player reuses the first). Each
- * direction has a 48px idle strip (4 frames) and walk strip (6 frames).
- *
- * @param index - Citizen folder number (1–4).
- * @returns The character spec.
- */
+// Pack-backed character specs. Every CraftPix pack lays out its directional
+// strips the same way (d_/s_/u_ × state), so the spec only needs the pack
+// path, frame size, and per-state suffix + frame count.
+
+const villagerLabels = ['Townsfolk', 'Tunic-blue', 'Hooded', 'Farmer']
+const archerLabels = ['Archer A', 'Archer B', 'Archer C']
+const forestLabels = ['Sprite', 'Pup', 'Slime', 'Mushroom']
+
+/** A citizen — 48px, 4-frame idle + 6-frame walk. */
 function citizen(index: number): CharacterSpec {
   return {
     key: `citizen-${index}`,
-    pathPrefix: `/assets/characters/citizens/citizen-${index}`,
+    pathPrefix: `/assets/packs/citizens/${index}`,
     frameSize: 48,
-    idleFrames: 4,
-    walkFrames: 6
+    idle: { suffix: '_idle', frames: 4 },
+    walk: { suffix: '_walk', frames: 6 },
+    category: 'villagers',
+    label: villagerLabels[index - 1] ?? `Villager ${index}`
   }
 }
 
-// Agents take citizens 1–4 in order; the player avatar reuses citizen 1.
-const characters: CharacterSpec[] = [citizen(1), citizen(2), citizen(3), citizen(4)]
+/** An archer-tower unit — 48px, has _idle but no _walk; reuse idle for both. */
+function archer(index: number): CharacterSpec {
+  return {
+    key: `archer-${index}`,
+    pathPrefix: `/assets/packs/archer-towers/units/${index}`,
+    frameSize: 48,
+    idle: { suffix: '_idle', frames: 4 },
+    walk: { suffix: '_idle', frames: 4 },
+    category: 'archers',
+    label: archerLabels[index - 1] ?? `Archer ${index}`
+  }
+}
+
+/** A field-enemy — 48px, has _walk but no _idle; reuse walk for both. */
+function forest(index: number): CharacterSpec {
+  return {
+    key: `forest-${index}`,
+    pathPrefix: `/assets/packs/field-enemies/${index}`,
+    frameSize: 48,
+    idle: { suffix: '_walk', frames: 6 },
+    walk: { suffix: '_walk', frames: 6 },
+    category: 'forest',
+    label: forestLabels[index - 1] ?? `Forest ${index}`
+  }
+}
+
+// Every available character, in display order (used by the spawn dialog).
+const characters: CharacterSpec[] = [
+  citizen(1),
+  citizen(2),
+  citizen(3),
+  citizen(4),
+  archer(1),
+  archer(2),
+  archer(3),
+  forest(1),
+  forest(2),
+  forest(3),
+  forest(4)
+]
 
 export const villageTheme: Theme = {
   id: 'village',

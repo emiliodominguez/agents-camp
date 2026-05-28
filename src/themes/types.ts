@@ -28,23 +28,32 @@ export interface GroundSpec {
   pathTile: number
 }
 
+/** Which group a character belongs to (used to section the spawn picker). */
+export type CharacterCategory = 'villagers' | 'archers' | 'forest' | 'enemies'
+
 /**
  * One playable/agent character with directional idle and walk animations. Each
- * direction is its own strip (frames laid out left-to-right); the side strip is
- * mirrored for left vs right at render time. Sheets are named
- * `<pathPrefix>-<d|s|u>-<idle|walk>.png`.
+ * direction is its own strip (frames laid out left-to-right); the side strip
+ * is mirrored for left vs right at render time. Different packs use different
+ * filenames for "idle" and "walk", so each state declares its own source
+ * suffix (e.g. citizens use `_idle`/`_walk`, archers reuse `_idle` for both,
+ * enemies reuse `_run`).
  */
 export interface CharacterSpec {
   /** Stable texture key (also the prefix for per-direction texture keys). */
   key: string
-  /** Public path prefix; per-direction files append `-<dir>-<state>.png`. */
+  /** Public path prefix for the sprite folder (e.g. `/assets/packs/citizens/1`). */
   pathPrefix: string
   /** Edge length of one (square) frame, in source pixels. */
   frameSize: number
-  /** Number of frames in each idle strip. */
-  idleFrames: number
-  /** Number of frames in each walk strip. */
-  walkFrames: number
+  /** Source for the idle animation. */
+  idle: { suffix: string; frames: number }
+  /** Source for the walk animation. */
+  walk: { suffix: string; frames: number }
+  /** Group used to section the spawn picker. */
+  category: CharacterCategory
+  /** Human-readable label shown in the picker. */
+  label: string
 }
 
 /**

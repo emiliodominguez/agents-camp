@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 
 import { WebSocketServer, type WebSocket } from 'ws'
 
-import { defaultSeed, type Villager } from '../shared/agents'
+import { defaultSeed, dotColorPalette, type Villager } from '../shared/agents'
 import type { ClientMessage, ServerMessage, UsageSnapshot, VillagerUsage } from '../shared/protocol'
 import { authMode, createSession, isLive, type AgentSession } from './agentSession'
 import { listSkills } from './skills'
@@ -117,11 +117,9 @@ function makeId(name: string): string {
   return candidate
 }
 
-/** Pick a pleasant default dot colour from a small palette. */
+/** Pick a pleasant default dot colour from the shared palette. */
 function pickDotColor(): string {
-  const palette = ['#7c9cff', '#6bd6a4', '#f0a868', '#d58cf0', '#f08c8c', '#a3d97c', '#7cd6f0', '#f0d57c']
-
-  return palette[roster.length % palette.length] ?? '#7c9cff'
+  return dotColorPalette[roster.length % dotColorPalette.length] ?? '#7c9cff'
 }
 
 webSocketServer.on('connection', (socket) => {
@@ -275,10 +273,11 @@ webSocketServer.on('connection', (socket) => {
         name,
         tile: parsed.tile,
         sprite: parsed.sprite,
-        dotColor: pickDotColor(),
+        dotColor: parsed.dotColor ?? pickDotColor(),
         // New villagers get a tent so spawning is light-weight.
         structure: 'tent-1',
-        persona: `You are ${name}. ${personaText}`
+        persona: `You are ${name}. ${personaText}`,
+        toolScope: parsed.toolScope ?? 'full'
       }
 
       roster = [...roster, villager]

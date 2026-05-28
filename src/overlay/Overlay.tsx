@@ -10,6 +10,7 @@ import {
   sendSpawn,
   sendUpdate
 } from '../services/agentClient'
+import { dotColorPalette, personaTemplates } from '../../shared/agents'
 import { villagers } from '../state/roster'
 import { setSkillsOpen, skills, skillsOpen } from '../state/skills'
 import { setUsageOpen, usage, usageOpen } from '../state/usage'
@@ -423,14 +424,68 @@ function QuestionLine(props: {
   )
 }
 
-/** Spawn dialog for adding a new villager on the nearby plot. */
+/** Human-readable label for each character category. */
+const categoryLabel: Record<import('../themes/types').CharacterCategory, string> = {
+  villagers: 'Villagers',
+  archers: 'Guards',
+  forest: 'Forest creatures',
+  enemies: 'Enemies'
+}
+
+/** Human-readable label for each persona-template category. */
+const templateCategoryLabel: Record<import('../../shared/agents').PersonaTemplate['category'], string> = {
+  engineering: 'Engineering',
+  design: 'Design',
+  product: 'Product',
+  support: 'Support',
+  fun: 'Fun'
+}
+
+/** Group characters or templates by their category, preserving insertion order. */
+function groupBy<T, K extends string>(items: T[], getCategory: (item: T) => K): Array<[K, T[]]> {
+  const groups: Array<[K, T[]]> = []
+  const indexByKey = new Map<K, number>()
+
+  for (const item of items) {
+    const key = getCategory(item)
+    const found = indexByKey.get(key)
+
+    if (found === undefined) {
+      indexByKey.set(key, groups.length)
+      groups.push([key, [item]])
+    } else {
+      const bucket = groups[found]
+      if (bucket !== undefined) {
+        bucket[1].push(item)
+      }
+    }
+  }
+
+  return groups
+}
+
+/**
+ * Spawn dialog for adding a new villager on the nearby plot. Offers a
+ * categorised sprite picker, a persona template library, a dot-colour
+ * palette, a tool-scope selector, and a live animated sprite preview.
+ */
 function SpawnDialog() {
   const [name, setName] = createSignal('')
   const [persona, setPersona] = createSignal('')
-  const [sprite, setSprite] = createSignal('citizen-3')
+  const [sprite, setSprite] = createSignal('citizen-1')
+  const [dotColor, setDotColor] = createSignal(dotColorPalette[0] ?? '#7c9cff')
+  const [toolScope, setToolScope] = createSignal<import('../../shared/agents').ToolScope>('full')
+  const [openSection, setOpenSection] = createSignal<string>('villagers')
+  const [openTemplateSection, setOpenTemplateSection] = createSignal<string | undefined>(undefined)
   let nameInput: HTMLInputElement | undefined
 
   queueMicrotask(() => nameInput?.focus())
+
+  const characterGroups = groupBy(activeTheme.characters, (c) => c.category)
+  const templateGroups = groupBy(personaTemplates, (template) => template.category)
+
+  /** The currently-selected character spec (for the preview). */
+  const selectedSpec = () => activeTheme.characters.find((c) => c.key === sprite())
 
   const submit = (event: Event): void => {
     event.preventDefault()
@@ -441,8 +496,29 @@ function SpawnDialog() {
       return
     }
 
-    sendSpawn(name().trim(), persona().trim(), sprite(), plot)
+    sendSpawn({
+      name: name().trim(),
+      persona: persona().trim(),
+      sprite: sprite(),
+      tile: plot,
+      dotColor: dotColor(),
+      toolScope: toolScope()
+    })
     setSpawnOpen(false)
+  }
+
+  const applyTemplate = (templateId: string): void => {
+    const template = personaTemplates.find((t) => t.id === templateId)
+
+    if (template === undefined) {
+      return
+    }
+
+    setPersona(template.role)
+
+    if (name().trim() === '') {
+      setName(template.suggestedName)
+    }
   }
 
   return (
@@ -455,49 +531,156 @@ function SpawnDialog() {
       </header>
 
       <form onSubmit={submit}>
-        <label>
-          <span>Name</span>
-          <input
-            ref={(el) => (nameInput = el)}
-            type="text"
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value)}
-            placeholder="e.g. Tester"
-            autocomplete="off"
-            required
-          />
-        </label>
+        <div class="spawn-row">
+          <label class="spawn-name">
+            <span>Name</span>
+            <input
+              ref={(el) => (nameInput = el)}
+              type="text"
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
+              placeholder="e.g. Tester"
+              autocomplete="off"
+              required
+            />
+          </label>
 
-        <label>
-          <span>Role</span>
-          <textarea
-            value={persona()}
-            onInput={(event) => setPersona(event.currentTarget.value)}
-            placeholder="What's their role? e.g. You're focused on writing tests and finding edge cases."
-            rows="3"
-            required
-          />
-        </label>
+          <SpritePreview spec={selectedSpec()} tint={dotColor()} />
+        </div>
 
-        <label>
-          <span>Look</span>
-          <div class="sprite-picker">
-            <For each={activeTheme.characters}>
-              {(spec, index) => (
+        <fieldset class="spawn-field">
+          <legend>Choose a look</legend>
+          <div class="spawn-sections">
+            <For each={characterGroups}>
+              {([categoryKey, specs]) => {
+                const isOpen = (): boolean => openSection() === categoryKey
+
+                return (
+                  <details class="spawn-section" open={isOpen()}>
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault()
+                        setOpenSection(isOpen() ? '' : categoryKey)
+                      }}
+                    >
+                      <span class="section-title">{categoryLabel[categoryKey]}</span>
+                      <span class="section-count">{specs.length}</span>
+                    </summary>
+                    <div class="sprite-picker">
+                      <For each={specs}>
+                        {(spec) => (
+                          <button
+                            type="button"
+                            class="sprite-option"
+                            classList={{ active: sprite() === spec.key }}
+                            onClick={() => setSprite(spec.key)}
+                            aria-label={spec.label}
+                            title={spec.label}
+                          >
+                            <img src={`${spec.pathPrefix}/d${spec.idle.suffix}.png`} alt="" style={{ '--frame-size': `${spec.frameSize}px` }} />
+                            <span class="sprite-label">{spec.label}</span>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </details>
+                )
+              }}
+            </For>
+          </div>
+        </fieldset>
+
+        <fieldset class="spawn-field">
+          <legend>Roster colour</legend>
+          <div class="color-picker">
+            <For each={dotColorPalette}>
+              {(color) => (
                 <button
                   type="button"
-                  class="sprite-option"
-                  classList={{ active: sprite() === spec.key }}
-                  onClick={() => setSprite(spec.key)}
-                  aria-label={`Citizen ${index() + 1}`}
-                  title={`Citizen ${index() + 1}`}
-                >
-                  <img src={`${spec.pathPrefix}-d-idle.png`} alt="" />
-                </button>
+                  class="color-option"
+                  classList={{ active: dotColor() === color }}
+                  style={{ background: color }}
+                  onClick={() => setDotColor(color)}
+                  aria-label={`Colour ${color}`}
+                />
               )}
             </For>
           </div>
-        </label>
+        </fieldset>
+
+        <fieldset class="spawn-field">
+          <legend>Capabilities</legend>
+          <div class="scope-picker">
+            <ScopeOption
+              value="conversational"
+              label="Conversational"
+              description="Chat only. No file or shell tools."
+              checked={toolScope() === 'conversational'}
+              onSelect={() => setToolScope('conversational')}
+            />
+            <ScopeOption
+              value="read-only"
+              label="Read-only"
+              description="Can browse and search files in their workspace, but not change them."
+              checked={toolScope() === 'read-only'}
+              onSelect={() => setToolScope('read-only')}
+            />
+            <ScopeOption
+              value="full"
+              label="Full coding"
+              description="Read, write, edit, run shell commands, and invoke skills. Like Claude Code."
+              checked={toolScope() === 'full'}
+              onSelect={() => setToolScope('full')}
+            />
+          </div>
+        </fieldset>
+
+        <fieldset class="spawn-field">
+          <legend>Role / instructions</legend>
+          <div class="spawn-sections">
+            <For each={templateGroups}>
+              {([categoryKey, templates]) => {
+                const isOpen = (): boolean => openTemplateSection() === categoryKey
+
+                return (
+                  <details class="spawn-section template-section" open={isOpen()}>
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault()
+                        setOpenTemplateSection(isOpen() ? undefined : categoryKey)
+                      }}
+                    >
+                      <span class="section-title">{templateCategoryLabel[categoryKey]}</span>
+                      <span class="section-count">{templates.length}</span>
+                    </summary>
+                    <div class="template-picker">
+                      <For each={templates}>
+                        {(template) => (
+                          <button
+                            type="button"
+                            class="template-option"
+                            onClick={() => applyTemplate(template.id)}
+                            title={template.role}
+                          >
+                            {template.name}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </details>
+                )
+              }}
+            </For>
+          </div>
+          <textarea
+            class="spawn-persona"
+            value={persona()}
+            onInput={(event) => setPersona(event.currentTarget.value)}
+            placeholder="Write a role, or pick a template above. e.g. You focus on writing tests and finding edge cases."
+            rows="4"
+            required
+          />
+        </fieldset>
 
         <div class="spawn-actions">
           <button type="button" class="secondary" onClick={() => setSpawnOpen(false)}>
@@ -506,6 +689,65 @@ function SpawnDialog() {
           <button type="submit">Spawn villager</button>
         </div>
       </form>
+    </div>
+  )
+}
+
+/** A radio-style capability option in the spawn dialog. */
+function ScopeOption(props: {
+  value: string
+  label: string
+  description: string
+  checked: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      class="scope-option"
+      classList={{ active: props.checked }}
+      onClick={props.onSelect}
+      aria-pressed={props.checked}
+    >
+      <span class="scope-radio" aria-hidden="true" />
+      <span class="scope-meta">
+        <span class="scope-label">{props.label}</span>
+        <span class="scope-description">{props.description}</span>
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Live animated preview of the chosen sprite. Cycles the d-idle strip with a
+ * CSS step-animation so you see a moving character without spinning up Phaser.
+ *
+ * @param props.spec - The chosen character spec, or undefined.
+ * @param props.tint - The dot colour used as a subtle background tint.
+ * @returns The preview pane.
+ */
+function SpritePreview(props: {
+  spec: import('../themes/types').CharacterSpec | undefined
+  tint: string
+}) {
+  return (
+    <div class="sprite-preview" style={{ background: `${props.tint}22` }}>
+      <Show when={props.spec} fallback={<div class="sprite-preview-empty">Pick a look</div>} keyed>
+        {(spec) => (
+          <>
+            <div
+              class="sprite-preview-frame"
+              style={{
+                '--frame-size': `${spec.frameSize}px`,
+                '--frames': spec.idle.frames
+              }}
+            >
+              <img src={`${spec.pathPrefix}/d${spec.idle.suffix}.png`} alt={spec.label} />
+            </div>
+            <span class="sprite-preview-label">{spec.label}</span>
+          </>
+        )}
+      </Show>
     </div>
   )
 }
