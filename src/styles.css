@@ -409,3 +409,164 @@ body {
 .chat .composer button:hover {
   background: #3a4570;
 }
+
+.chat header .remove {
+  background: none;
+  border: 1px solid #5a3030;
+  color: #d49a9a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.chat header .remove:hover {
+  background: #5a3030;
+  color: #ffffff;
+}
+
+.chat header .remove + .close {
+  margin-left: 4px;
+}
+
+/* Spawn dialog */
+
+.spawn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  animation: rise 0.2s ease-out;
+}
+
+.spawn header {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid #2c3450;
+  font-size: 13px;
+}
+
+.spawn header .close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #6b7390;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.spawn header .close:hover {
+  color: #e6e9f0;
+}
+
+.spawn form {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spawn label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa4c0;
+}
+
+.spawn label > span {
+  font-size: 10px;
+}
+
+.spawn input,
+.spawn textarea {
+  background: #11141c;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
+  color: #e6e9f0;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  resize: vertical;
+}
+
+.spawn input:focus,
+.spawn textarea:focus {
+  outline: none;
+  border-color: #4a5a8c;
+}
+
+.spawn .sprite-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.spawn .sprite-option {
+  background: #11141c;
+  border: 2px solid #2c3450;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 56px;
+}
+
+.spawn .sprite-option:hover {
+  border-color: #4a5a8c;
+}
+
+.spawn .sprite-option.active {
+  border-color: #8aab5a;
+  background: #1d2a18;
+}
+
+.spawn .sprite-option img {
+  image-rendering: pixelated;
+  width: 36px;
+  height: 36px;
+  object-fit: none;
+  object-position: 0 0;
+}
+
+.spawn .spawn-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.spawn .spawn-actions button {
+  background: #2c3450;
+  border: 1px solid #3a4570;
+  border-radius: 6px;
+  color: #e6e9f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
+.spawn .spawn-actions button.secondary {
+  background: none;
+  color: #9aa4c0;
+}
+
+.spawn .spawn-actions button:hover {
+  background: #3a4570;
+}

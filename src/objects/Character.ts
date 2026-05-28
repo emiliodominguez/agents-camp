@@ -128,4 +128,14 @@ export class Character extends Phaser.GameObjects.Container {
     this.label.setColor(active ? '#ffffff' : '#e6e9f0')
     this.label.setFontStyle(active ? 'bold' : 'normal')
   }
+
+  /**
+   * Tint the sprite to recolor it (used to distinguish the player from agents
+   * that share the same citizen sheet).
+   *
+   * @param color - RGB tint as a 24-bit hex value (e.g. `0xfff0d0`).
+   */
+  setSpriteTint(color: number): void {
+    this.sprite.setTint(color)
+  }
 }

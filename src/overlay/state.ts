@@ -1,70 +1,34 @@
 import { createSignal } from 'solid-js'
 
-import type { AgentStatus } from '../../shared/protocol'
-import { agents, type AgentDescriptor } from '../world'
+import type { Villager } from '../../shared/agents'
+import type { AgentStatus, ChatLine } from '../../shared/protocol'
+import { villagerById } from '../state/roster'
+
+export type { ChatLine }
 
 /**
  * Reactive bridge between the Phaser game and the Solid overlay. The scene
- * pushes updates in through the setters; the overlay reads the signals. Keeping
- * this in one module means the two worlds never reach into each other directly.
- */
-
-/** One line in a chat transcript. */
-export interface ChatLine {
-  from: 'you' | 'agent'
-  text: string
-  /** Epoch milliseconds when the line was recorded. */
-  at: number
-}
-
-/** localStorage key for an agent's saved transcript. */
-const storageKey = (agentId: string): string => `claude-office:chat:${agentId}`
-
-/**
- * Load an agent's saved transcript from localStorage.
+ * pushes updates in through the setters; the overlay reads the signals.
  *
- * @param agentId - The agent whose history to load.
- * @returns The saved lines, or an empty array.
+ * Transcripts and the roster are server-backed — this module just mirrors the
+ * latest state for the UI.
  */
-function loadHistory(agentId: string): ChatLine[] {
-  try {
-    const raw = window.localStorage.getItem(storageKey(agentId))
 
-    if (raw === null) {
-      return []
-    }
+const [nearbyAgent, setNearbyAgentSignal] = createSignal<Villager | undefined>(undefined)
 
-    const parsed = JSON.parse(raw) as ChatLine[]
+/** Cell of an empty plot the player is near (drives the "Spawn villager" prompt). */
+const [nearbyPlot, setNearbyPlot] = createSignal<{ column: number; row: number } | undefined>(undefined)
 
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
+/** The villager the player has opened a chat with, or undefined when closed. */
+const [chatAgent, setChatAgent] = createSignal<Villager | undefined>(undefined)
 
-/**
- * Persist an agent's transcript to localStorage.
- *
- * @param agentId - The agent whose history to save.
- * @param lines - The transcript to store.
- */
-function saveHistory(agentId: string, lines: ChatLine[]): void {
-  try {
-    window.localStorage.setItem(storageKey(agentId), JSON.stringify(lines))
-  } catch {
-    // Storage full or unavailable — history just won't persist.
-  }
-}
-
-const [nearbyAgent, setNearbyAgentSignal] = createSignal<AgentDescriptor | undefined>(undefined)
-
-/** The agent the player has opened a chat with, or undefined when closed. */
-const [chatAgent, setChatAgent] = createSignal<AgentDescriptor | undefined>(undefined)
+/** Whether the spawn dialog is open. */
+const [spawnOpen, setSpawnOpen] = createSignal(false)
 
 /** The committed transcript for the open chat. */
 const [chatLog, setChatLog] = createSignal<ChatLine[]>([])
 
-/** The agent's in-progress streamed reply (shown live, before it commits). */
+/** The villager's in-progress streamed reply (shown live, before it commits). */
 const [streamingReply, setStreamingReply] = createSignal('')
 
 /** True between sending a message and the first reply token (the "thinking" state). */
@@ -73,12 +37,16 @@ const [awaitingReply, setAwaitingReply] = createSignal(false)
 /** Whether the backend is running real Claude (true) or the mock (false). */
 const [liveMode, setLiveMode] = createSignal(false)
 
-/** Live status per agent id, for the roster HUD. */
+/** Live status per villager id, for the roster HUD. */
 const [agentStatuses, setAgentStatuses] = createSignal<Record<string, AgentStatus>>({})
 
 export {
   nearbyAgent,
+  nearbyPlot,
+  setNearbyPlot,
   chatAgent,
+  spawnOpen,
+  setSpawnOpen,
   chatLog,
   streamingReply,
   awaitingReply,
@@ -88,10 +56,9 @@ export {
 }
 
 /**
- * Record which agent the player is standing next to, resolving the id to its
- * descriptor for the overlay to display.
+ * Record which villager the player is standing next to.
  *
- * @param agentId - The nearby agent's id, or undefined when none is in range.
+ * @param agentId - The nearby villager's id, or undefined when none is in range.
  */
 export function setNearbyAgent(agentId: string | undefined): void {
   if (agentId === undefined) {
@@ -100,15 +67,13 @@ export function setNearbyAgent(agentId: string | undefined): void {
     return
   }
 
-  const descriptor = agents.find((agent) => agent.id === agentId)
-
-  setNearbyAgentSignal(descriptor)
+  setNearbyAgentSignal(villagerById(agentId))
 }
 
 /**
- * Record an agent's live status for the roster HUD.
+ * Record a villager's live status for the roster HUD.
  *
- * @param agentId - The agent.
+ * @param agentId - The villager.
  * @param status - Its new status.
  */
 export function recordAgentStatus(agentId: string, status: AgentStatus): void {
@@ -116,19 +81,20 @@ export function recordAgentStatus(agentId: string, status: AgentStatus): void {
 }
 
 /**
- * Open the chat panel for an agent, restoring its saved transcript.
+ * Open the chat panel for a villager. The transcript is filled in by the
+ * server's `history` reply, so we start empty here.
  *
- * @param agentId - The agent to talk to.
+ * @param agentId - The villager to talk to.
  */
 export function openChat(agentId: string): void {
-  const descriptor = agents.find((agent) => agent.id === agentId)
+  const villager = villagerById(agentId)
 
-  if (descriptor === undefined) {
+  if (villager === undefined) {
     return
   }
 
-  setChatAgent(descriptor)
-  setChatLog(loadHistory(agentId))
+  setChatAgent(villager)
+  setChatLog([])
   setStreamingReply('')
   setAwaitingReply(false)
 }
@@ -141,26 +107,37 @@ export function closeChat(): void {
 }
 
 /**
- * Append the player's line to the open transcript and persist it.
+ * Replace the open chat's transcript with the server-supplied history.
+ *
+ * @param agentId - The villager whose history arrived.
+ * @param lines - The full transcript.
+ */
+export function setChatHistory(agentId: string, lines: ChatLine[]): void {
+  if (chatAgent()?.id !== agentId) {
+    return
+  }
+
+  setChatLog(lines)
+}
+
+/**
+ * Append the player's line to the open transcript (server also persists it).
  *
  * @param text - What the player said.
  */
 export function appendPlayerLine(text: string): void {
-  const agent = chatAgent()
-
-  if (agent === undefined) {
+  if (chatAgent() === undefined) {
     return
   }
 
   setChatLog((lines) => [...lines, { from: 'you', text, at: Date.now() }])
   setAwaitingReply(true)
-  saveHistory(agent.id, chatLog())
 }
 
 /**
  * Append a streamed token to the agent's in-progress reply.
  *
- * @param agentId - The agent the token belongs to.
+ * @param agentId - The villager the token belongs to.
  * @param text - The chunk of text.
  */
 export function appendAgentToken(agentId: string, text: string): void {
@@ -173,10 +150,9 @@ export function appendAgentToken(agentId: string, text: string): void {
 }
 
 /**
- * Commit an agent's finished reply to the transcript, persist it, and clear the
- * stream.
+ * Commit a villager's finished reply to the transcript and clear the stream.
  *
- * @param agentId - The agent that replied.
+ * @param agentId - The villager that replied.
  * @param text - The full reply.
  */
 export function commitAgentReply(agentId: string, text: string): void {
@@ -187,5 +163,4 @@ export function commitAgentReply(agentId: string, text: string): void {
   setChatLog((lines) => [...lines, { from: 'agent', text, at: Date.now() }])
   setStreamingReply('')
   setAwaitingReply(false)
-  saveHistory(agentId, chatLog())
 }

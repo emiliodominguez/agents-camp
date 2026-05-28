@@ -1,4 +1,4 @@
-import { agents, officeColumns, officeRows } from '../world'
+import { officeColumns, officeRows, seedVillagers } from '../world'
 import type { Placement, Theme } from '../themes'
 
 /** A ground tile placed at a cell. */
@@ -93,19 +93,22 @@ export function furnish(theme: Theme): Furnishing {
     }
   }
 
-  // Each agent's home sits one row above where the agent stands.
-  agents.forEach((agent, position) => {
-    const structure = theme.agentStructures[position]
-
-    if (structure === undefined) {
-      return
+  // Each seed villager's home sits one row above where they stand. Spawned
+  // villagers' homes are added at runtime by the scene.
+  for (const villager of seedVillagers) {
+    if (theme.sprites[villager.structure] === undefined) {
+      continue
     }
 
-    const placement: Placement = { sprite: structure, column: agent.tile.column, row: agent.tile.row - 1 }
+    const placement: Placement = {
+      sprite: villager.structure,
+      column: villager.tile.column,
+      row: villager.tile.row - 1
+    }
 
     objects.push(placement)
     blockFootprint(theme, placement, blocked)
-  })
+  }
 
   // Scattered decor.
   for (const placement of theme.scatter) {

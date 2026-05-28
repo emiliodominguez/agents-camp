@@ -91,8 +91,6 @@ export interface Theme {
    * reused for the player avatar.
    */
   characters: CharacterSpec[]
-  /** Sprite key each agent stands beside, in agent order (a home/tent). */
-  agentStructures: string[]
   /** Authored walkable-path cells, painted with `ground.pathTile`. */
   path: Array<{ column: number; row: number }>
   /** Decorative objects scattered around the scene. */

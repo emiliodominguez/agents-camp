@@ -1,4 +1,4 @@
-import { agents, officeColumns, officeRows, playerSpawn } from '../world'
+import { emptyPlots, officeColumns, officeRows, playerSpawn, seedVillagers } from '../world'
 import type { CharacterSpec, ObjectSprite, Placement, Theme } from './types'
 
 /**
@@ -239,7 +239,7 @@ function buildPath(): Cell[] {
   // and differing seeds keep them from overlapping into a single stripe.
   const branchSeeds = [61, 67, 71, 73]
 
-  agents.forEach((agent, position) => {
+  seedVillagers.forEach((agent, position) => {
     walkRoad({ column: agent.tile.column, row: agent.tile.row }, hub, 1, branchSeeds[position] ?? 60, cells)
   })
 
@@ -257,13 +257,11 @@ const pathCells = buildPath()
 const pathKeys = new Set(pathCells.map((cell) => `${cell.column},${cell.row}`))
 const isPath = (column: number, row: number): boolean => pathKeys.has(`${column},${row}`)
 
-const agentStructureKeys = ['house-1', 'tent-1', 'house-2', 'tent-2']
-
 /**
- * Cells reserved by the agents, their homes, and the player so scattered decor
- * never lands on a character or a building. A home occupies a footprint-sized
- * block one row above the agent (matching `furnish`), plus a clear tile around
- * each character so sprites do not visually collide.
+ * Cells reserved by the seed villagers, their homes, and the player so
+ * scattered decor never lands on a character or a building. A home occupies a
+ * footprint-sized block one row above the villager (matching `furnish`), plus
+ * a clear tile around each character.
  */
 const reservedKeys = (() => {
   const keys = new Set<string>()
@@ -278,31 +276,38 @@ const reservedKeys = (() => {
     }
   }
 
-  // Each agent's standing tile (plus a ring) and home footprint.
-  agents.forEach((agent, position) => {
+  // Keep empty plots clear so a spawn affordance can sit there.
+  for (const plot of emptyPlots) {
     for (let dy = -1; dy <= 1; dy += 1) {
       for (let dx = -1; dx <= 1; dx += 1) {
-        reserve(agent.tile.column + dx, agent.tile.row + dy)
+        reserve(plot.column + dx, plot.row + dy)
+      }
+    }
+  }
+
+  for (const villager of seedVillagers) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        reserve(villager.tile.column + dx, villager.tile.row + dy)
       }
     }
 
-    const structure = spriteList.find((entry) => entry.key === agentStructureKeys[position])
+    const structure = spriteList.find((entry) => entry.key === villager.structure)
 
     if (structure === undefined) {
-      return
+      continue
     }
 
     const { width, height } = structure.footprint
-    const homeRow = agent.tile.row - 1
-    const startColumn = agent.tile.column - Math.floor((width - 1) / 2)
+    const homeRow = villager.tile.row - 1
+    const startColumn = villager.tile.column - Math.floor((width - 1) / 2)
 
-    // Reserve the footprint and a one-tile halo so decor never clips the home.
     for (let dy = -1; dy <= height; dy += 1) {
       for (let dx = -1; dx <= width; dx += 1) {
         reserve(startColumn + dx, homeRow - dy + 1)
       }
     }
-  })
+  }
 
   return keys
 })()
@@ -508,7 +513,6 @@ export const villageTheme: Theme = {
   },
   sprites: Object.fromEntries(spriteList.map((entry) => [entry.key, entry])),
   characters,
-  agentStructures: ['house-1', 'tent-1', 'house-2', 'tent-2'],
   path: pathCells,
   scatter: buildScatter(),
   // A warm, grass-matching green so the world edges blend into the background

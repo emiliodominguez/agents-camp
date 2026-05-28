@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
-import type { AgentPersona } from '../shared/agents'
+import type { Villager } from '../shared/agents'
 import type { AgentStatus } from '../shared/protocol'
 
 /**
@@ -111,12 +111,12 @@ function toUserMessage(text: string): SDKUserMessage {
  * One persistent `query()` consumes a queue of player messages and reports
  * status, streamed tokens, and final replies through the handlers.
  *
- * @param persona - The agent's identity and system prompt.
+ * @param villager - The villager's identity and system prompt.
  * @param handlers - Progress callbacks.
  * @param model - Claude model id to use.
  * @returns The live session.
  */
-function createLiveSession(persona: AgentPersona, handlers: SessionHandlers, model: string): AgentSession {
+function createLiveSession(villager: Villager, handlers: SessionHandlers, model: string): AgentSession {
   const queue = new MessageQueue()
 
   async function* prompt(): AsyncGenerator<SDKUserMessage> {
@@ -129,7 +129,7 @@ function createLiveSession(persona: AgentPersona, handlers: SessionHandlers, mod
     prompt: prompt(),
     options: {
       model,
-      systemPrompt: persona.systemPrompt,
+      systemPrompt: villager.persona,
       allowedTools: [],
       permissionMode: 'bypassPermissions',
       includePartialMessages: true,
@@ -207,12 +207,12 @@ const mockReplies: Record<string, string[]> = {
  * token, so the whole pipeline works without an API key. Mirrors the live
  * session's status/token/reply sequence and timing.
  *
- * @param persona - The agent's identity.
+ * @param villager - The villager's identity.
  * @param handlers - Progress callbacks.
  * @returns The mock session.
  */
-function createMockSession(persona: AgentPersona, handlers: SessionHandlers): AgentSession {
-  const pool = mockReplies[persona.id] ?? ['…']
+function createMockSession(villager: Villager, handlers: SessionHandlers): AgentSession {
+  const pool = mockReplies[villager.id] ?? [`Hello — I'm ${villager.name}.`, 'Tell me more.', "I'm thinking it over."]
   let turn = 0
   const timers = new Set<ReturnType<typeof setTimeout>>()
   let closed = false
@@ -324,16 +324,16 @@ export function isLive(): boolean {
  * Create an agent session, choosing the live SDK implementation when an API
  * key is present and the mock otherwise.
  *
- * @param persona - The agent's identity and persona.
+ * @param villager - The villager's identity and persona.
  * @param handlers - Progress callbacks.
  * @returns A new session.
  */
-export function createSession(persona: AgentPersona, handlers: SessionHandlers): AgentSession {
+export function createSession(villager: Villager, handlers: SessionHandlers): AgentSession {
   if (isLive()) {
     const model = process.env.AGENT_MODEL ?? 'claude-sonnet-4-6'
 
-    return createLiveSession(persona, handlers, model)
+    return createLiveSession(villager, handlers, model)
   }
 
-  return createMockSession(persona, handlers)
+  return createMockSession(villager, handlers)
 }

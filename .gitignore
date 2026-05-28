@@ -6,6 +6,9 @@ dist
 # Secrets — the agent backend reads ANTHROPIC_API_KEY from here
 .env
 
+# Runtime backend state — file-backed roster and chat transcripts
+.agents/
+
 # Raw asset downloads (only the extracted sheets in public/ are committed)
 .assets-download
 

@@ -1,19 +1,27 @@
 import Phaser from 'phaser'
 
+import type { Villager } from '../../shared/agents'
 import { Character, type Facing } from '../objects/Character'
-import { onAgentStatus } from '../services/agentClient'
-import { chatAgent, openChat, setNearbyAgent } from '../overlay/state'
+import { onAgentStatus, onRemoved, onRoster, onSpawned } from '../services/agentClient'
+import {
+  chatAgent,
+  openChat,
+  setNearbyAgent,
+  setNearbyPlot,
+  setSpawnOpen,
+  spawnOpen
+} from '../overlay/state'
+import { villagers } from '../state/roster'
 import { activeTheme } from '../themes'
 import { furnish, type Furnishing } from './furnish'
 import {
-  agents,
+  emptyPlots,
   interactionRadius,
   officeColumns,
   officeRows,
   playerSpawn,
   tileSize,
-  tileToPixel,
-  type AgentDescriptor
+  tileToPixel
 } from '../world'
 
 /** Movement speed of the player avatar, in pixels per second. */
@@ -22,15 +30,15 @@ const playerSpeed = 105
 /** Movement speed of wandering agents, in pixels per second (a slow amble). */
 const wanderSpeed = 45
 
-/** How far, in tiles, an agent may stray from its home while wandering. */
+/** How far, in tiles, a villager may stray from home while wandering. */
 const wanderRadius = 2.4
 
 /** Texture key for the loaded ground sheet. */
 const groundKey = 'ground'
 
-/** A wandering agent's home anchor and current ambling target. */
+/** A wandering villager's home anchor and current ambling target. */
 interface WanderState {
-  /** Pixel home position the agent strays around. */
+  /** Pixel home position the villager strays around. */
   home: { x: number; y: number }
   /** Current pixel target, or undefined while pausing. */
   target: { x: number; y: number } | undefined
@@ -40,23 +48,32 @@ interface WanderState {
 
 /**
  * The walkable scene. Loads the theme's ground tiles, object sprites, and
- * characters; tiles the ground; places each agent's home and the scattered
- * decor; and drives a player avatar with the keyboard. Object footprints block
- * movement, and proximity to an agent is pushed into the Solid overlay.
+ * citizen characters; tiles the ground; draws the seed villagers' homes;
+ * spawns characters from the live roster and follows runtime add/remove
+ * events; drives a player avatar with the keyboard; opens chat or the spawn
+ * dialog on E depending on what's nearby.
  */
 export class VillageScene extends Phaser.Scene {
   private player!: Character
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined
   private keys: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key> | undefined
   private talkKey: Phaser.Input.Keyboard.Key | undefined
-  private unsubscribeStatus: (() => void) | undefined
+
+  private readonly unsubscribers: Array<() => void> = []
 
   private readonly characters = new Map<string, Character>()
   private readonly wanderers = new Map<string, WanderState>()
+  /** Sprite images for spawned villagers' homes (seed homes are baked into the layout). */
+  private readonly spawnedHomes = new Map<string, Phaser.GameObjects.Image>()
+  /** Visual affordances over each empty plot. */
+  private readonly plotMarkers: Phaser.GameObjects.Container[] = []
+
   private furnishing!: Furnishing
 
-  /** The agent the player is currently close enough to interact with. */
+  /** The villager the player is currently close enough to interact with. */
   private nearbyAgentId: string | undefined
+  /** The empty plot the player is currently standing on, if any. */
+  private nearbyPlotIndex: number | undefined
 
   constructor() {
     super('village')
@@ -72,8 +89,7 @@ export class VillageScene extends Phaser.Scene {
       spacing: ground.margin
     })
 
-    // Each villager has six directional strips (down/side/up × idle/walk),
-    // sliced into square frames.
+    // Each villager has six directional strips (down/side/up × idle/walk).
     for (const character of activeTheme.characters) {
       for (const direction of ['d', 's', 'u'] as const) {
         for (const state of ['idle', 'walk'] as const) {
@@ -85,7 +101,6 @@ export class VillageScene extends Phaser.Scene {
       }
     }
 
-    // Each object sprite is its own native-size image.
     for (const sprite of Object.values(activeTheme.sprites)) {
       this.load.image(sprite.key, sprite.path)
     }
@@ -97,7 +112,7 @@ export class VillageScene extends Phaser.Scene {
     this.registerAnimations()
     this.drawGround()
     this.drawObjects()
-    this.spawnAgents()
+    this.drawEmptyPlots()
     this.spawnPlayer()
     this.bindInput()
 
@@ -108,26 +123,35 @@ export class VillageScene extends Phaser.Scene {
     this.applyZoom()
     this.scale.on(Phaser.Scale.Events.RESIZE, this.applyZoom, this)
 
-    // Reflect each agent's live backend status on its bubble.
-    this.unsubscribeStatus = onAgentStatus((agentId, status) => {
-      this.characters.get(agentId)?.setStatus(status)
-    })
+    // Sync the scene with the live roster: add/remove characters as the
+    // server's roster, spawned, and removed events arrive.
+    this.unsubscribers.push(
+      onRoster((next) => this.syncCharacters(next)),
+      onSpawned((villager) => this.addCharacter(villager)),
+      onRemoved((agentId) => this.removeCharacter(agentId)),
+      onAgentStatus((agentId, status) => {
+        this.characters.get(agentId)?.setStatus(status)
+      })
+    )
+
+    // If the roster already has villagers (e.g. on hot reload), sync now.
+    if (villagers().length > 0) {
+      this.syncCharacters(villagers())
+    }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.unsubscribeStatus?.()
+      for (const off of this.unsubscribers) {
+        off()
+      }
     })
   }
 
   /**
-   * Zoom the camera to a fixed, comfortable scale and follow the player. The
-   * world is larger than the viewport, so the edges scroll off-screen as the
-   * player walks. The zoom drops on small viewports so a useful slice of the
-   * world stays visible.
+   * Zoom the camera to a fixed, comfortable scale and follow the player.
    */
   private applyZoom(): void {
     const baseZoom = 2
 
-    // Never zoom in so far that fewer than ~12 tiles fit across the viewport.
     const minTilesAcross = 12
     const fitZoom = this.scale.width / (minTilesAcross * tileSize)
 
@@ -140,10 +164,9 @@ export class VillageScene extends Phaser.Scene {
     this.handleTalkKey()
     this.updateWanderers(delta)
 
-    // Freeze the player and proximity changes while a chat is open so typing
-    // doesn't also drive the avatar. Agents keep animating (the one being
-    // talked to turns to face the player).
-    if (chatAgent() !== undefined) {
+    // Freeze the player and proximity changes while a chat or spawn dialog is
+    // open so typing doesn't drive the avatar.
+    if (chatAgent() !== undefined || spawnOpen()) {
       return
     }
 
@@ -152,8 +175,9 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Amble each idle agent slowly around its home, pausing between strolls. The
-   * agent the player is chatting with stops and faces the player instead.
+   * Amble each idle villager slowly around their home, pausing between
+   * strolls. The villager the player is chatting with stops and faces the
+   * player instead.
    *
    * @param delta - Milliseconds since the previous frame.
    */
@@ -168,7 +192,6 @@ export class VillageScene extends Phaser.Scene {
         continue
       }
 
-      // While being talked to, stop and turn toward the player.
       if (id === openChatId) {
         character.setMotion(this.directionToward(character, this.player), false)
         state.target = undefined
@@ -194,7 +217,6 @@ export class VillageScene extends Phaser.Scene {
       const distance = Math.hypot(dx, dy)
 
       if (distance <= step) {
-        // Arrived: settle and pause before the next stroll.
         character.x = state.target.x
         character.y = state.target.y
         character.setMotion(character.currentFacing, false)
@@ -209,7 +231,6 @@ export class VillageScene extends Phaser.Scene {
       const nextX = character.x + (dx / distance) * step
       const nextY = character.y + (dy / distance) * step
 
-      // Don't walk through obstacles; abandon a blocked target.
       if (this.isBlocked(nextX, nextY)) {
         state.target = undefined
         state.pause = 0.5
@@ -224,12 +245,6 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * Pick a random walkable pixel target within the wander radius of home.
-   *
-   * @param state - The agent's wander state.
-   * @returns A target position, or undefined if none was found (the agent then pauses).
-   */
   private pickWanderTarget(state: WanderState): { x: number; y: number } | undefined {
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const angle = Math.random() * Math.PI * 2
@@ -237,7 +252,8 @@ export class VillageScene extends Phaser.Scene {
       const x = state.home.x + Math.cos(angle) * radius
       const y = state.home.y + Math.sin(angle) * radius
 
-      const inBounds = x > tileSize && x < officeColumns * tileSize - tileSize && y > tileSize && y < officeRows * tileSize - tileSize
+      const inBounds =
+        x > tileSize && x < officeColumns * tileSize - tileSize && y > tileSize && y < officeRows * tileSize - tileSize
 
       if (inBounds && !this.isBlocked(x, y)) {
         return { x, y }
@@ -247,13 +263,6 @@ export class VillageScene extends Phaser.Scene {
     return undefined
   }
 
-  /**
-   * The cardinal direction from one character toward another.
-   *
-   * @param from - The character that turns.
-   * @param to - The character to face.
-   * @returns The facing direction.
-   */
   private directionToward(from: Character, to: Character): Facing {
     const dx = to.x - from.x
     const dy = to.y - from.y
@@ -262,15 +271,14 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Open the nearby agent's chat when E is pressed, or close the open chat when
-   * Escape is pressed.
+   * Open the nearby villager's chat (E near a villager) or the spawn dialog
+   * (E on an empty plot).
    */
   private handleTalkKey(): void {
     if (this.talkKey === undefined || !Phaser.Input.Keyboard.JustDown(this.talkKey)) {
       return
     }
 
-    // Ignore E while typing in the chat input — let the keystroke land there.
     const active = document.activeElement
 
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
@@ -279,6 +287,12 @@ export class VillageScene extends Phaser.Scene {
 
     if (this.nearbyAgentId !== undefined) {
       openChat(this.nearbyAgentId)
+
+      return
+    }
+
+    if (this.nearbyPlotIndex !== undefined) {
+      setSpawnOpen(true)
     }
   }
 
@@ -295,11 +309,6 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * Draw each placed object at native size, anchored by its bottom centre so
-   * tall objects sit on the ground. Depth follows the anchor row so nearer
-   * objects overlap farther ones.
-   */
   private drawObjects(): void {
     for (const placement of this.furnishing.objects) {
       const { x, y } = tileToPixel(placement.column, placement.row)
@@ -309,8 +318,45 @@ export class VillageScene extends Phaser.Scene {
       const image = this.add.image(x + offsetX, y + tileSize / 2 + offsetY, placement.sprite)
 
       image.setOrigin(0.5, 1)
-      // Depth follows the visual baseline so jittered objects still sort right.
       image.setDepth(placement.row + offsetY / tileSize)
+    }
+  }
+
+  /**
+   * Place a soft marker (a glowing flowers tuft + a floating "+" sign) on each
+   * empty plot, so the player can see where new villagers can be spawned.
+   */
+  private drawEmptyPlots(): void {
+    for (const plot of emptyPlots) {
+      const { x, y } = tileToPixel(plot.column, plot.row)
+      const container = this.add.container(x, y)
+
+      const flowers = this.add.image(0, tileSize / 4, 'flowers-2')
+      flowers.setOrigin(0.5, 1)
+      flowers.setAlpha(0.85)
+
+      const plus = this.add.text(0, -tileSize / 2, '+', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '20px',
+        color: '#ffffff'
+      })
+      plus.setOrigin(0.5, 0.5)
+      plus.setShadow(0, 1, '#000000', 2)
+
+      container.add([flowers, plus])
+      container.setDepth(plot.row + 0.5)
+
+      // Gentle bob so the markers feel alive without being noisy.
+      this.tweens.add({
+        targets: plus,
+        y: plus.y - 3,
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.inOut'
+      })
+
+      this.plotMarkers.push(container)
     }
   }
 
@@ -344,45 +390,104 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  /** Instantiate a Character for every configured agent. */
-  private spawnAgents(): void {
-    agents.forEach((agent, position) => {
-      const spec = activeTheme.characters[position]
+  /**
+   * Bring the scene in line with the given roster: add any newly-arrived
+   * villagers and remove any that vanished.
+   *
+   * @param next - The latest roster.
+   */
+  private syncCharacters(next: Villager[]): void {
+    const nextIds = new Set(next.map((villager) => villager.id))
 
-      if (spec === undefined) {
-        return
+    // Add any villager that doesn't have a sprite yet.
+    for (const villager of next) {
+      if (!this.characters.has(villager.id)) {
+        this.addCharacter(villager)
       }
+    }
 
-      this.characters.set(agent.id, this.createCharacter(agent, spec.key))
-
-      const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
-      this.wanderers.set(agent.id, { home: { x, y }, target: undefined, pause: Math.random() * 2 })
-    })
+    // Remove any character whose villager is gone from the roster.
+    for (const id of [...this.characters.keys()]) {
+      if (!nextIds.has(id)) {
+        this.removeCharacter(id)
+      }
+    }
   }
 
   /**
-   * Build one agent character where the agent stands.
+   * Add a single villager to the scene: spawn the character, mark a wander
+   * state, and (for non-seed villagers) plant their home above them.
    *
-   * @param agent - The descriptor to render.
-   * @param textureKey - The citizen texture to use.
-   * @returns The created Character.
+   * @param villager - The villager to render.
    */
-  private createCharacter(agent: AgentDescriptor, textureKey: string): Character {
-    const { x, y } = tileToPixel(agent.tile.column, agent.tile.row)
+  private addCharacter(villager: Villager): void {
+    if (this.characters.has(villager.id)) {
+      return
+    }
+
+    const { x, y } = tileToPixel(villager.tile.column, villager.tile.row)
 
     const character = new Character(this, x, y, {
-      name: agent.name,
-      texture: textureKey,
-      status: agent.status,
+      name: villager.name,
+      texture: villager.sprite,
+      status: 'idle',
       size: tileSize * 1.4
     })
 
-    character.setDepth(agent.tile.row + 0.5)
+    character.setDepth(villager.tile.row + 0.5)
+    this.characters.set(villager.id, character)
+    this.wanderers.set(villager.id, { home: { x, y }, target: undefined, pause: Math.random() * 2 })
 
-    return character
+    // Spawned villagers get a tent drawn dynamically; seed villagers already
+    // have their homes baked into the layout.
+    if (!this.isSeedVillager(villager.id)) {
+      this.plantHome(villager)
+    }
   }
 
-  /** Create the player avatar at the spawn tile, using the first citizen. */
+  /**
+   * Remove a villager (and their home, if dynamically planted).
+   *
+   * @param agentId - The villager id to remove.
+   */
+  private removeCharacter(agentId: string): void {
+    this.characters.get(agentId)?.destroy()
+    this.characters.delete(agentId)
+    this.wanderers.delete(agentId)
+
+    const home = this.spawnedHomes.get(agentId)
+
+    if (home !== undefined) {
+      home.destroy()
+      this.spawnedHomes.delete(agentId)
+    }
+  }
+
+  /**
+   * Draw a home for a spawned villager, one row above where they stand.
+   *
+   * @param villager - The villager whose home to plant.
+   */
+  private plantHome(villager: Villager): void {
+    const structure = activeTheme.sprites[villager.structure]
+
+    if (structure === undefined) {
+      return
+    }
+
+    const { x, y } = tileToPixel(villager.tile.column, villager.tile.row - 1)
+    const image = this.add.image(x, y + tileSize / 2, villager.structure)
+    image.setOrigin(0.5, 1)
+    image.setDepth(villager.tile.row - 1)
+    this.spawnedHomes.set(villager.id, image)
+  }
+
+  /** Whether an id belongs to one of the seed villagers (whose homes are baked in). */
+  private isSeedVillager(id: string): boolean {
+    return ['planner', 'builder', 'reviewer', 'explorer'].includes(id)
+  }
+
+  /** Create the player avatar at the spawn tile. */
   private spawnPlayer(): void {
     const { x, y } = tileToPixel(playerSpawn.column, playerSpawn.row)
     const spec = activeTheme.characters[0]
@@ -395,10 +500,12 @@ export class VillageScene extends Phaser.Scene {
       size: tileSize * 1.4
     })
 
+    // Tint the player so they're visually distinct from the Planner (who
+    // shares the same citizen sheet).
+    this.player.setSpriteTint(0xfff0d0)
     this.player.setDepth(playerSpawn.row + 0.5)
   }
 
-  /** Wire up arrow keys and WASD. */
   private bindInput(): void {
     const keyboard = this.input.keyboard
 
@@ -410,17 +517,9 @@ export class VillageScene extends Phaser.Scene {
     this.keys = keyboard.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>
     this.talkKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E)
 
-    // Let keystrokes reach the chat input instead of being swallowed for the game.
     keyboard.disableGlobalCapture()
   }
 
-  /**
-   * Move the avatar from the current key state, clamped to the scene and
-   * stopped by blocked cells. Each axis is resolved separately so the player
-   * can slide along an obstacle instead of sticking to it.
-   *
-   * @param delta - Milliseconds since the previous frame.
-   */
   private movePlayer(delta: number): void {
     const cursors = this.cursors
     const keys = this.keys
@@ -456,7 +555,6 @@ export class VillageScene extends Phaser.Scene {
       return
     }
 
-    // Face the dominant axis of movement.
     const facing: Facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down'
     this.player.setMotion(facing, true)
 
@@ -481,13 +579,6 @@ export class VillageScene extends Phaser.Scene {
     this.player.setDepth(Math.floor(this.player.y / tileSize) + 0.5)
   }
 
-  /**
-   * Whether a pixel position falls inside a blocked tile cell.
-   *
-   * @param x - Pixel x to test.
-   * @param y - Pixel y to test.
-   * @returns True when the cell at that position cannot be entered.
-   */
   private isBlocked(x: number, y: number): boolean {
     const column = Math.floor(x / tileSize)
     const row = Math.floor(y / tileSize)
@@ -496,8 +587,9 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /**
-   * Find the closest agent within the interaction radius, highlight it, and
-   * push the result into the overlay whenever the nearby agent changes.
+   * Find the closest villager (or empty plot) within the interaction radius
+   * and push the result into the overlay state. Villagers take precedence
+   * over plots.
    */
   private updateProximity(): void {
     let closestId: string | undefined
@@ -512,20 +604,44 @@ export class VillageScene extends Phaser.Scene {
       }
     }
 
-    if (closestId === this.nearbyAgentId) {
-      return
+    let plotIndex: number | undefined
+    let plotDistance = interactionRadius
+
+    if (closestId === undefined) {
+      for (let index = 0; index < emptyPlots.length; index += 1) {
+        const plot = emptyPlots[index]
+
+        if (plot === undefined) {
+          continue
+        }
+
+        const { x, y } = tileToPixel(plot.column, plot.row)
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y)
+
+        if (distance < plotDistance) {
+          plotDistance = distance
+          plotIndex = index
+        }
+      }
     }
 
-    if (this.nearbyAgentId !== undefined) {
-      this.characters.get(this.nearbyAgentId)?.setHighlighted(false)
+    if (closestId !== this.nearbyAgentId) {
+      if (this.nearbyAgentId !== undefined) {
+        this.characters.get(this.nearbyAgentId)?.setHighlighted(false)
+      }
+
+      if (closestId !== undefined) {
+        this.characters.get(closestId)?.setHighlighted(true)
+      }
+
+      this.nearbyAgentId = closestId
+      setNearbyAgent(closestId)
     }
 
-    if (closestId !== undefined) {
-      this.characters.get(closestId)?.setHighlighted(true)
+    if (plotIndex !== this.nearbyPlotIndex) {
+      this.nearbyPlotIndex = plotIndex
+      setNearbyPlot(plotIndex !== undefined ? emptyPlots[plotIndex] : undefined)
     }
-
-    this.nearbyAgentId = closestId
-
-    setNearbyAgent(closestId)
   }
+
 }
