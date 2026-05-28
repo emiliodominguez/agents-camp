@@ -5,17 +5,22 @@ import './styles.css'
 
 import {
   onAgentHello,
+  onAgentQuestion,
   onAgentReply,
   onAgentStatus,
+  onAgentTool,
   onAgentToken,
   onHistory,
   onRemoved,
   onRoster,
+  onSkills,
   onSpawned,
   startAgentClient
 } from './services/agentClient'
 import {
+  appendAgentQuestion,
   appendAgentToken,
+  appendAgentTool,
   chatAgent,
   closeChat,
   commitAgentReply,
@@ -26,6 +31,7 @@ import {
   spawnOpen
 } from './overlay/state'
 import { addVillager, removeVillager, setRoster } from './state/roster'
+import { setSkills, setSkillsOpen, skillsOpen } from './state/skills'
 import { VillageScene } from './scenes/VillageScene'
 import { Overlay } from './overlay/Overlay'
 
@@ -59,16 +65,22 @@ onAgentHello((live) => setLiveMode(live))
 onAgentStatus((agentId, status) => recordAgentStatus(agentId, status))
 onAgentToken((agentId, text) => appendAgentToken(agentId, text))
 onAgentReply((agentId, text) => commitAgentReply(agentId, text))
+onAgentTool((agentId, tool) => appendAgentTool(agentId, tool))
+onAgentQuestion((agentId, question) => appendAgentQuestion(agentId, question))
 onRoster((villagers) => setRoster(villagers))
 onSpawned((villager) => addVillager(villager))
 onRemoved((agentId) => removeVillager(agentId))
 onHistory((agentId, lines) => setChatHistory(agentId, lines))
+onSkills((list) => setSkills(list))
 startAgentClient()
 
 // Escape closes whichever overlay panel is open.
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    if (spawnOpen()) {
+    if (skillsOpen()) {
+      event.preventDefault()
+      setSkillsOpen(false)
+    } else if (spawnOpen()) {
       event.preventDefault()
       setSpawnOpen(false)
     } else if (chatAgent() !== undefined) {

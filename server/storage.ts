@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -19,9 +19,42 @@ import type { ChatLine } from '../shared/protocol'
 const here = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(here, '..', '.agents')
 const chatsDir = join(dataDir, 'chats')
+const workspacesDir = join(dataDir, 'workspace')
 const rosterPath = join(dataDir, 'villagers.json')
 
 mkdirSync(chatsDir, { recursive: true })
+mkdirSync(workspacesDir, { recursive: true })
+
+/**
+ * Ensure a per-villager workspace directory exists and return its path. This is
+ * the `cwd` the Agent SDK runs each villager's tool calls in.
+ *
+ * @param agentId - The villager whose workspace to ensure.
+ * @returns The absolute workspace path.
+ */
+export function ensureWorkspace(agentId: string): string {
+  const path = join(workspacesDir, agentId)
+  mkdirSync(path, { recursive: true })
+
+  return path
+}
+
+/**
+ * Remove a villager's workspace directory recursively.
+ *
+ * @param agentId - The villager whose workspace to remove.
+ */
+export function deleteWorkspace(agentId: string): void {
+  const path = join(workspacesDir, agentId)
+
+  if (existsSync(path)) {
+    try {
+      rmSync(path, { recursive: true, force: true })
+    } catch {
+      // Best effort; if a file is locked we leave it.
+    }
+  }
+}
 
 /**
  * Load the roster from disk, seeding the file with the default villagers on

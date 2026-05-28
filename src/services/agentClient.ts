@@ -1,5 +1,12 @@
 import type { Villager } from '../../shared/agents'
-import type { AgentStatus, ChatLine, ClientMessage, ServerMessage } from '../../shared/protocol'
+import type {
+  AgentQuestion,
+  AgentStatus,
+  ChatLine,
+  ClientMessage,
+  ServerMessage,
+  SkillSummary
+} from '../../shared/protocol'
 
 /**
  * Browser-side client for the agent backend. Opens a WebSocket (proxied through
@@ -15,6 +22,9 @@ type RosterListener = (villagers: Villager[]) => void
 type SpawnedListener = (villager: Villager) => void
 type RemovedListener = (agentId: string) => void
 type HistoryListener = (agentId: string, lines: ChatLine[]) => void
+type ToolListener = (agentId: string, tool: { name: string; input: unknown; summary: string }) => void
+type QuestionListener = (agentId: string, question: AgentQuestion) => void
+type SkillsListener = (skills: SkillSummary[]) => void
 
 const statusListeners = new Set<StatusListener>()
 const tokenListeners = new Set<TokenListener>()
@@ -24,6 +34,9 @@ const rosterListeners = new Set<RosterListener>()
 const spawnedListeners = new Set<SpawnedListener>()
 const removedListeners = new Set<RemovedListener>()
 const historyListeners = new Set<HistoryListener>()
+const toolListeners = new Set<ToolListener>()
+const questionListeners = new Set<QuestionListener>()
+const skillsListeners = new Set<SkillsListener>()
 
 let socket: WebSocket | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -78,6 +91,18 @@ function connect(): void {
     } else if (message.type === 'history') {
       for (const listener of historyListeners) {
         listener(message.agentId, message.lines)
+      }
+    } else if (message.type === 'tool') {
+      for (const listener of toolListeners) {
+        listener(message.agentId, { name: message.name, input: message.input, summary: message.summary })
+      }
+    } else if (message.type === 'question') {
+      for (const listener of questionListeners) {
+        listener(message.agentId, message.question)
+      }
+    } else if (message.type === 'skills') {
+      for (const listener of skillsListeners) {
+        listener(message.skills)
       }
     }
   })
@@ -151,12 +176,33 @@ export function sendSpawn(
 }
 
 /**
- * Ask the server to remove a spawned villager.
+ * Ask the server to remove a villager.
  *
  * @param agentId - The villager to remove.
  */
 export function sendRemove(agentId: string): void {
   sendMessage({ type: 'remove', agentId })
+}
+
+/**
+ * Update a villager's name and/or persona on the server.
+ *
+ * @param agentId - The villager to update.
+ * @param fields - The fields to set; only provided fields are changed.
+ */
+export function sendUpdate(agentId: string, fields: { name?: string; persona?: string }): void {
+  sendMessage({ type: 'update', agentId, ...fields })
+}
+
+/**
+ * Answer an AskUserQuestion the agent posed.
+ *
+ * @param agentId - The villager that asked.
+ * @param toolUseId - The question's id.
+ * @param answers - The chosen option labels.
+ */
+export function sendAnswer(agentId: string, toolUseId: string, answers: string[]): void {
+  sendMessage({ type: 'answer', agentId, toolUseId, answers })
 }
 
 export function onAgentStatus(listener: StatusListener): () => void {
@@ -205,4 +251,22 @@ export function onHistory(listener: HistoryListener): () => void {
   historyListeners.add(listener)
 
   return () => historyListeners.delete(listener)
+}
+
+export function onAgentTool(listener: ToolListener): () => void {
+  toolListeners.add(listener)
+
+  return () => toolListeners.delete(listener)
+}
+
+export function onAgentQuestion(listener: QuestionListener): () => void {
+  questionListeners.add(listener)
+
+  return () => questionListeners.delete(listener)
+}
+
+export function onSkills(listener: SkillsListener): () => void {
+  skillsListeners.add(listener)
+
+  return () => skillsListeners.delete(listener)
 }

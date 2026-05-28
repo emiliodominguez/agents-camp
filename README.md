@@ -32,16 +32,33 @@ tents, props) and "Free Pixel Citizens" (the four animated villagers).
 
 ## Agents
 
-Each villager is a long-lived conversational agent with a role persona (Planner,
-Builder, Reviewer, Explorer — see `shared/agents.ts`). Stand next to one and
-press **E** to open a chat. Messages stream back token by token, and the status
+Each villager is a long-lived agent with a role persona. Stand next to one and
+press **E** to open a chat. Messages stream back token by token; the status
 bubble over the sprite reflects the agent's live state: ⚙️ working → 💬 talking
 → 💤 idle.
 
-- **Live:** real Claude replies (conversational only, no tools in this pass).
-- **Mock:** with no credentials, the backend serves persona-flavoured mock
+Villagers are **fully capable coding agents** — they each have a private
+workspace at `.agents/workspace/<id>/` and can use `Read`, `Write`, `Edit`,
+`Glob`, `Grep`, `Bash`, `Skill` (any of your `~/.claude/skills/`), and
+`AskUserQuestion` (rendered as clickable option buttons in the chat). Tool
+calls appear inline in the transcript.
+
+Walk onto an empty plot (the glowing `+` markers) and press E to **spawn a new
+villager** with a custom name, role, and sprite. Chat instructions are editable
+from the chat header — saved on the next message.
+
+The roster, transcripts, and personas all persist on disk under `.agents/` and
+survive reloads and server restarts.
+
+- **Live:** real Claude replies.
+- **Mock:** with no credentials, the backend serves persona-flavoured canned
   replies, so the whole pipeline — WebSocket, streaming, status — works end to
-  end.
+  end (mock mode has no tools).
+
+> ⚠️ Villagers run with `permissionMode: 'bypassPermissions'` — they can read,
+> write, edit, and run shell commands without prompting, scoped to their
+> workspace directory (`cwd`) but **Bash itself isn't sandboxed**. Treat them
+> like Claude Code: only run them on machines / accounts where that's fine.
 
 ## Run
 

@@ -160,6 +160,357 @@ body {
   box-shadow: 0 0 6px 1px #6bd6a4;
 }
 
+.roster .roster-action {
+  margin-top: 10px;
+  width: 100%;
+  background: #2c3450;
+  border: 1px solid #3a4570;
+  border-radius: 6px;
+  color: #e6e9f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.roster .roster-action:hover {
+  background: #3a4570;
+}
+
+/* Instructions toggle / panel inside chat header */
+
+.chat header .instructions-toggle {
+  margin-left: 6px;
+  background: none;
+  border: 1px solid #2c3450;
+  color: #9aa4c0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.chat header .instructions-toggle:hover {
+  background: #2c3450;
+  color: #e6e9f0;
+}
+
+.chat .instructions {
+  border-bottom: 1px solid #2c3450;
+  padding: 12px 14px;
+  background: rgba(17, 20, 28, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat .instructions-body {
+  margin: 0;
+  font-size: 12px;
+  color: #c9d4ff;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat .instructions label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa4c0;
+}
+
+.chat .instructions input,
+.chat .instructions textarea {
+  background: #0c0f15;
+  border: 1px solid #2c3450;
+  border-radius: 5px;
+  color: #e6e9f0;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.chat .instructions input:focus,
+.chat .instructions textarea:focus {
+  outline: none;
+  border-color: #4a5a8c;
+}
+
+.chat .instructions-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.chat .instructions-actions button {
+  background: #2c3450;
+  border: 1px solid #3a4570;
+  border-radius: 5px;
+  color: #e6e9f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+.chat .instructions-actions button:hover {
+  background: #3a4570;
+}
+
+.chat .instructions-actions button.secondary {
+  background: none;
+  color: #9aa4c0;
+}
+
+/* Tool-call line in the transcript */
+
+.chat .line.tool {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #9aa4c0;
+  padding-left: 6px;
+}
+
+.chat .line.tool .tool-badge {
+  background: #2c3450;
+  border: 1px solid #3a4570;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.chat .line.tool .tool-summary {
+  color: #c0c6d8;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Question (AskUserQuestion) line */
+
+.chat .line.question .question-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #1a1f2c;
+  padding: 10px 12px;
+  border-radius: 8px;
+  max-width: 95%;
+}
+
+.chat .line.question .question-header {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa4c0;
+}
+
+.chat .line.question .question-text {
+  margin: 0;
+  font-size: 13px;
+  color: #e6e9f0;
+  line-height: 1.4;
+}
+
+.chat .line.question .question-options {
+  display: grid;
+  gap: 6px;
+}
+
+.chat .line.question .question-option {
+  background: #0c0f15;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
+  color: #e6e9f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat .line.question .question-option:hover:not(:disabled) {
+  border-color: #4a5a8c;
+  background: #131825;
+}
+
+.chat .line.question .question-option.selected {
+  border-color: #6bd6a4;
+  background: #182621;
+}
+
+.chat .line.question .question-option.answer {
+  border-color: #4a5a8c;
+  background: #1a2236;
+  opacity: 0.8;
+}
+
+.chat .line.question .question-option:disabled {
+  cursor: default;
+}
+
+.chat .line.question .option-label {
+  font-weight: 600;
+}
+
+.chat .line.question .option-desc {
+  font-size: 11px;
+  color: #9aa4c0;
+}
+
+.chat .line.question .question-submit {
+  align-self: flex-end;
+  background: #2c3450;
+  border: 1px solid #3a4570;
+  border-radius: 6px;
+  color: #e6e9f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+.chat .line.question .question-submit:hover:not(:disabled) {
+  background: #3a4570;
+}
+
+.chat .line.question .question-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Skills panel */
+
+.skills {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(70vh, 600px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  animation: rise 0.2s ease-out;
+}
+
+.skills header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #2c3450;
+  font-size: 13px;
+}
+
+.skills header .skills-count {
+  font-size: 11px;
+  color: #6b7390;
+}
+
+.skills header .close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #6b7390;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.skills header .close:hover {
+  color: #e6e9f0;
+}
+
+.skills-hint {
+  margin: 0;
+  padding: 10px 14px 4px;
+  font-size: 11px;
+  color: #6b7390;
+}
+
+.skills-hint code {
+  background: #2c3450;
+  border-radius: 3px;
+  padding: 0 4px;
+  color: #c9d4ff;
+}
+
+.skills-list {
+  margin: 0;
+  padding: 8px 14px 14px;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skills-list li {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 10px;
+  background: #11141c;
+  border: 1px solid #2c3450;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.skills-list .skill-name {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  color: #c9d4ff;
+}
+
+.skills-list .skill-source {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  border-radius: 3px;
+  align-self: center;
+  justify-self: end;
+}
+
+.skills-list .skill-source.user {
+  background: #2c3450;
+  color: #9aa4c0;
+}
+
+.skills-list .skill-source.project {
+  background: #1d2a18;
+  color: #a3d97c;
+}
+
+.skills-list .skill-description {
+  grid-column: 1 / -1;
+  color: #9aa4c0;
+  line-height: 1.4;
+  font-size: 11px;
+}
+
+.skills-empty {
+  text-align: center;
+  color: #6b7390;
+  font-size: 12px;
+}
+
 .prompt {
   position: absolute;
   bottom: 24px;

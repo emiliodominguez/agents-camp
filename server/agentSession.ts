@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
-import type { Villager } from '../shared/agents'
+import { sharedVoice, type Villager } from '../shared/agents'
 import type { AgentStatus } from '../shared/protocol'
 
 /**
@@ -18,14 +18,29 @@ export interface SessionHandlers {
   onToken: (text: string) => void
   /** The reply finished; `text` is the whole message. */
   onReply: (text: string) => void
+  /** The agent called a tool. */
+  onTool: (event: { name: string; input: unknown; summary: string }) => void
+  /** The agent asked a multi-choice question (AskUserQuestion). */
+  onQuestion: (event: AgentQuestionEvent) => void
   /** Something failed. */
   onError: (message: string) => void
+}
+
+/** A multi-choice question yielded by the AskUserQuestion tool. */
+export interface AgentQuestionEvent {
+  toolUseId: string
+  question: string
+  header?: string
+  multiSelect: boolean
+  options: Array<{ label: string; description?: string }>
 }
 
 /** A long-lived conversation with one agent. */
 export interface AgentSession {
   /** Send a player message into the conversation. */
   send: (text: string) => void
+  /** Answer an AskUserQuestion-style question with the picked options. */
+  answer: (toolUseId: string, picks: string[]) => void
   /** Tear the session down and release resources. */
   close: () => void
 }
@@ -93,6 +108,39 @@ class MessageQueue {
 }
 
 /**
+ * Brief one-line summary of a tool call, suitable for compact chat display.
+ *
+ * @param name - Tool name.
+ * @param input - Tool input as an object.
+ * @returns A short human-readable summary.
+ */
+function summariseTool(name: string, input: Record<string, unknown>): string {
+  const path = typeof input.file_path === 'string' ? input.file_path : undefined
+  const pattern = typeof input.pattern === 'string' ? input.pattern : undefined
+  const command = typeof input.command === 'string' ? input.command : undefined
+  const skillName = typeof input.skill === 'string' ? input.skill : undefined
+
+  switch (name) {
+    case 'Read':
+      return path !== undefined ? `Read ${path}` : 'Read a file'
+    case 'Write':
+      return path !== undefined ? `Wrote ${path}` : 'Wrote a file'
+    case 'Edit':
+      return path !== undefined ? `Edited ${path}` : 'Edited a file'
+    case 'Glob':
+      return pattern !== undefined ? `Glob ${pattern}` : 'Searched files'
+    case 'Grep':
+      return pattern !== undefined ? `Grep ${pattern}` : 'Searched text'
+    case 'Bash':
+      return command !== undefined ? `Ran: ${command.length > 60 ? command.slice(0, 60) + '…' : command}` : 'Ran a command'
+    case 'Skill':
+      return skillName !== undefined ? `Invoked /${skillName}` : 'Invoked a skill'
+    default:
+      return name
+  }
+}
+
+/**
  * Wrap a player-message string as the SDK's user-message shape.
  *
  * @param text - The player's message.
@@ -116,8 +164,10 @@ function toUserMessage(text: string): SDKUserMessage {
  * @param model - Claude model id to use.
  * @returns The live session.
  */
-function createLiveSession(villager: Villager, handlers: SessionHandlers, model: string): AgentSession {
+function createLiveSession(villager: Villager, handlers: SessionHandlers, model: string, cwd: string): AgentSession {
   const queue = new MessageQueue()
+  /** Pending question answers — toolUseId → resolver awaited by canUseTool. */
+  const pendingAnswers = new Map<string, (picks: string[]) => void>()
 
   async function* prompt(): AsyncGenerator<SDKUserMessage> {
     for await (const text of queue) {
@@ -129,11 +179,59 @@ function createLiveSession(villager: Villager, handlers: SessionHandlers, model:
     prompt: prompt(),
     options: {
       model,
-      systemPrompt: villager.persona,
-      allowedTools: [],
+      systemPrompt: `${villager.persona}\n\n${sharedVoice}`,
+      cwd,
+      allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Skill', 'AskUserQuestion'],
       permissionMode: 'bypassPermissions',
       includePartialMessages: true,
-      settingSources: []
+      // Load user and project skills (~/.claude/skills and .claude/skills) so
+      // the villager can invoke them via the Skill tool.
+      settingSources: ['user', 'project'],
+      // Intercept AskUserQuestion: emit it to the chat UI and wait for the
+      // player's pick. Returning behavior:'deny' with a JSON message gives the
+      // model a structured tool result without us having to run the built-in
+      // tool ourselves (which would need a TUI).
+      canUseTool: async (toolName, input) => {
+        if (toolName !== 'AskUserQuestion') {
+          return { behavior: 'allow', updatedInput: input }
+        }
+
+        const questions = Array.isArray((input as { questions?: unknown }).questions)
+          ? ((input as { questions: Array<Record<string, unknown>> }).questions ?? [])
+          : []
+        const first = questions[0]
+
+        if (first === undefined) {
+          return { behavior: 'allow', updatedInput: input }
+        }
+
+        const toolUseId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const options = Array.isArray(first.options)
+          ? (first.options as Array<Record<string, unknown>>).map((option) => ({
+              label: String(option.label ?? ''),
+              description: typeof option.description === 'string' ? option.description : undefined
+            }))
+          : []
+
+        handlers.onQuestion({
+          toolUseId,
+          question: String(first.question ?? ''),
+          header: typeof first.header === 'string' ? first.header : undefined,
+          multiSelect: Boolean(first.multiSelect),
+          options
+        })
+
+        const picks = await new Promise<string[]>((resolve) => {
+          pendingAnswers.set(toolUseId, resolve)
+        })
+
+        // Return the picks as a synthetic tool error message — Claude reads
+        // this as the AskUserQuestion result.
+        return {
+          behavior: 'deny',
+          message: JSON.stringify({ answers: picks })
+        }
+      }
     }
   })
 
@@ -154,6 +252,20 @@ function createLiveSession(villager: Villager, handlers: SessionHandlers, model:
             handlers.onStatus('talking')
             handlers.onToken(event.delta.text)
           }
+        } else if (message.type === 'assistant') {
+          // Surface tool-use blocks as they arrive so the UI can show what the
+          // villager is doing (reading, editing, running commands, calling skills).
+          const content = message.message?.content ?? []
+
+          for (const raw of content) {
+            const block = raw as { type?: string; name?: unknown; input?: unknown }
+
+            if (block.type === 'tool_use' && typeof block.name === 'string' && block.name !== 'AskUserQuestion') {
+              const input = (block.input ?? {}) as Record<string, unknown>
+              const summary = summariseTool(block.name, input)
+              handlers.onTool({ name: block.name, input, summary })
+            }
+          }
         } else if (message.type === 'result') {
           const final = message.subtype === 'success' ? message.result : current
           handlers.onReply(final)
@@ -170,6 +282,14 @@ function createLiveSession(villager: Villager, handlers: SessionHandlers, model:
     send: (text: string) => {
       handlers.onStatus('working')
       queue.push(text)
+    },
+    answer: (toolUseId: string, picks: string[]) => {
+      const resolver = pendingAnswers.get(toolUseId)
+
+      if (resolver !== undefined) {
+        pendingAnswers.delete(toolUseId)
+        resolver(picks)
+      }
     },
     close: () => {
       queue.close()
@@ -258,6 +378,9 @@ function createMockSession(villager: Villager, handlers: SessionHandlers): Agent
         handlers.onStatus('idle')
       })()
     },
+    answer: () => {
+      // Mock sessions never ask questions.
+    },
     close: () => {
       closed = true
 
@@ -328,11 +451,11 @@ export function isLive(): boolean {
  * @param handlers - Progress callbacks.
  * @returns A new session.
  */
-export function createSession(villager: Villager, handlers: SessionHandlers): AgentSession {
+export function createSession(villager: Villager, handlers: SessionHandlers, cwd: string): AgentSession {
   if (isLive()) {
     const model = process.env.AGENT_MODEL ?? 'claude-sonnet-4-6'
 
-    return createLiveSession(villager, handlers, model)
+    return createLiveSession(villager, handlers, model, cwd)
   }
 
   return createMockSession(villager, handlers)

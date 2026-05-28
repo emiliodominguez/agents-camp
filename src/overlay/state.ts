@@ -130,7 +130,7 @@ export function appendPlayerLine(text: string): void {
     return
   }
 
-  setChatLog((lines) => [...lines, { from: 'you', text, at: Date.now() }])
+  setChatLog((lines) => [...lines, { kind: 'message', from: 'you', text, at: Date.now() }])
   setAwaitingReply(true)
 }
 
@@ -160,7 +160,55 @@ export function commitAgentReply(agentId: string, text: string): void {
     return
   }
 
-  setChatLog((lines) => [...lines, { from: 'agent', text, at: Date.now() }])
+  setChatLog((lines) => [...lines, { kind: 'message', from: 'agent', text, at: Date.now() }])
   setStreamingReply('')
   setAwaitingReply(false)
+}
+
+/**
+ * Append a tool-call to the transcript so the UI can show what the villager
+ * is doing (reading, editing, calling skills, etc.).
+ *
+ * @param agentId - The villager that called the tool.
+ * @param tool - Tool name, input, and summary.
+ */
+export function appendAgentTool(agentId: string, tool: { name: string; input: unknown; summary: string }): void {
+  if (chatAgent()?.id !== agentId) {
+    return
+  }
+
+  setChatLog((lines) => [...lines, { kind: 'tool', name: tool.name, input: tool.input, summary: tool.summary, at: Date.now() }])
+}
+
+/**
+ * Append an AskUserQuestion that the villager raised.
+ *
+ * @param agentId - The villager asking.
+ * @param question - The question event.
+ */
+export function appendAgentQuestion(
+  agentId: string,
+  question: import('../../shared/protocol').AgentQuestion
+): void {
+  if (chatAgent()?.id !== agentId) {
+    return
+  }
+
+  setChatLog((lines) => [...lines, { kind: 'question', from: 'agent', at: Date.now(), question }])
+}
+
+/**
+ * Mark a question as answered (used after the player picks options).
+ *
+ * @param toolUseId - The id of the question.
+ * @param picks - The chosen option labels.
+ */
+export function markQuestionAnswered(toolUseId: string, picks: string[]): void {
+  setChatLog((lines) =>
+    lines.map((line) =>
+      line.kind === 'question' && line.question.toolUseId === toolUseId
+        ? { ...line, question: { ...line.question, answered: picks } }
+        : line
+    )
+  )
 }

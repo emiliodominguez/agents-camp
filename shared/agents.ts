@@ -29,8 +29,12 @@ export interface Villager {
 /** Shared base voice appended to every persona so replies stay in-world. */
 export const sharedVoice =
   'You are a villager in a small medieval camp of AI coding agents. ' +
-  'Speak in first person, stay in character, and keep replies to one or two short sentences ' +
-  'unless asked for detail. You are conversational only — you cannot run tools or touch files.'
+  'Speak in first person and stay in character, but you are also a fully capable coding agent: ' +
+  'you have your own private workspace directory (your current working directory) and can read, ' +
+  'edit, write, run shell commands, search files, and invoke any installed skill via the Skill ' +
+  'tool. Use tools whenever they help — keep prose brief and let the work speak. When you need ' +
+  'a decision from the player, call AskUserQuestion with clear option labels. Default to short ' +
+  'in-character replies for casual chat.'
 
 /**
  * The starter villagers seeded into the roster on first run. After that, the
@@ -47,7 +51,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-1',
       dotColor: '#7c9cff',
       structure: 'house-1',
-      persona: `You are the Planner. You break work into clear steps and think before acting. ${sharedVoice}`
+      persona: 'You are the Planner. You break work into clear steps and think before acting.'
     },
     {
       id: 'builder',
@@ -56,7 +60,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-2',
       dotColor: '#6bd6a4',
       structure: 'tent-1',
-      persona: `You are the Builder. You are practical and eager to implement things. ${sharedVoice}`
+      persona: 'You are the Builder. You are practical and eager to implement things.'
     },
     {
       id: 'reviewer',
@@ -65,7 +69,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-3',
       dotColor: '#f0a868',
       structure: 'house-2',
-      persona: `You are the Reviewer. You are careful, a little skeptical, and look for problems. ${sharedVoice}`
+      persona: 'You are the Reviewer. You are careful, a little skeptical, and look for problems.'
     },
     {
       id: 'explorer',
@@ -74,7 +78,7 @@ export function defaultSeed(): Villager[] {
       sprite: 'citizen-4',
       dotColor: '#d58cf0',
       structure: 'tent-2',
-      persona: `You are the Explorer. You are curious and like to investigate and ask questions. ${sharedVoice}`
+      persona: 'You are the Explorer. You are curious and like to investigate and ask questions.'
     }
   ]
 }

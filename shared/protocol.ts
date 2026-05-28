@@ -13,13 +13,57 @@ import type { Villager } from './agents'
 /** Lifecycle state of a villager, mirrored from agents.ts. */
 export type AgentStatus = 'idle' | 'working' | 'talking'
 
-/** One persisted line in a chat transcript. */
-export interface ChatLine {
-  from: 'you' | 'agent'
-  text: string
-  /** Epoch milliseconds when the line was recorded. */
-  at: number
+/** A skill the villagers can call (read from ~/.claude/skills + project skills). */
+export interface SkillSummary {
+  /** Skill name (folder name). */
+  name: string
+  /** Origin: "user" (~/.claude/skills) or "project" (.claude/skills). */
+  source: 'user' | 'project'
+  /** One-line description, parsed from the skill's frontmatter or first line. */
+  description: string
 }
+
+/** One option in an AskUserQuestion-style multi-choice. */
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+/** A question the agent asked, awaiting the player to pick an option. */
+export interface AgentQuestion {
+  toolUseId: string
+  question: string
+  header?: string
+  multiSelect: boolean
+  options: QuestionOption[]
+  answered?: string[]
+}
+
+/**
+ * One persisted line in a chat transcript. Tool calls and questions are
+ * captured alongside ordinary text so transcripts read in order.
+ */
+export type ChatLine =
+  | {
+      kind: 'message'
+      from: 'you' | 'agent'
+      text: string
+      at: number
+    }
+  | {
+      kind: 'tool'
+      name: string
+      input: unknown
+      /** Brief one-line summary for compact display. */
+      summary: string
+      at: number
+    }
+  | {
+      kind: 'question'
+      from: 'agent'
+      at: number
+      question: AgentQuestion
+    }
 
 /** A message sent from the browser to the agent backend. */
 export type ClientMessage =
@@ -43,9 +87,24 @@ export type ClientMessage =
       tile: { column: number; row: number }
     }
   | {
-      /** Remove a spawned villager (only user-created villagers can be removed). */
+      /** Remove a villager. */
       type: 'remove'
       agentId: string
+    }
+  | {
+      /** Update a villager's persona (system prompt) and/or display name. */
+      type: 'update'
+      agentId: string
+      name?: string
+      persona?: string
+    }
+  | {
+      /** Answer an AskUserQuestion the agent posed. */
+      type: 'answer'
+      agentId: string
+      toolUseId: string
+      /** Labels of the selected options. */
+      answers: string[]
     }
 
 /** A message sent from the agent backend to the browser. */
@@ -71,6 +130,11 @@ export type ServerMessage =
       agentId: string
     }
   | {
+      /** The list of skills available for villagers to call. */
+      type: 'skills'
+      skills: SkillSummary[]
+    }
+  | {
       /** A villager's lifecycle state changed. Drives the status bubble. */
       type: 'status'
       agentId: string
@@ -93,6 +157,20 @@ export type ServerMessage =
       type: 'history'
       agentId: string
       lines: ChatLine[]
+    }
+  | {
+      /** The agent called a tool (real-time event for the chat UI). */
+      type: 'tool'
+      agentId: string
+      name: string
+      input: unknown
+      summary: string
+    }
+  | {
+      /** The agent asked the player a multi-choice question. */
+      type: 'question'
+      agentId: string
+      question: AgentQuestion
     }
   | {
       /** Something went wrong handling a message for an agent. */

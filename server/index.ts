@@ -2,13 +2,16 @@ import { createServer } from 'node:http'
 
 import { WebSocketServer, type WebSocket } from 'ws'
 
-import { sharedVoice, type Villager } from '../shared/agents'
-import type { ChatLine, ClientMessage, ServerMessage } from '../shared/protocol'
+import type { Villager } from '../shared/agents'
+import type { ClientMessage, ServerMessage } from '../shared/protocol'
 import { authMode, createSession, isLive, type AgentSession } from './agentSession'
+import { listSkills } from './skills'
 import {
   appendTranscriptLine,
   deleteTranscript,
+  deleteWorkspace,
   describeStorage,
+  ensureWorkspace,
   loadRoster,
   loadTranscript,
   saveRoster
@@ -40,9 +43,6 @@ const webSocketServer = new WebSocketServer({ server: httpServer, path: '/agents
 
 /** The current roster, loaded once on boot; saves on every mutation. */
 let roster: Villager[] = loadRoster()
-
-/** The id of every default-seeded villager, which cannot be removed. */
-const seededIds = new Set(roster.map((villager) => villager.id))
 
 /** Every connected socket, so roster broadcasts reach all open tabs. */
 const sockets = new Set<WebSocket>()
@@ -129,16 +129,40 @@ webSocketServer.on('connection', (socket) => {
       return undefined
     }
 
-    const session = createSession(villager, {
-      onStatus: (status) => send(socket, { type: 'status', agentId, status }),
-      onToken: (text) => send(socket, { type: 'token', agentId, text }),
-      onReply: (text) => {
-        const line: ChatLine = { from: 'agent', text, at: Date.now() }
-        appendTranscriptLine(agentId, line)
-        send(socket, { type: 'reply', agentId, text })
+    const workspace = ensureWorkspace(agentId)
+
+    const session = createSession(
+      villager,
+      {
+        onStatus: (status) => send(socket, { type: 'status', agentId, status }),
+        onToken: (text) => send(socket, { type: 'token', agentId, text }),
+        onReply: (text) => {
+          appendTranscriptLine(agentId, { kind: 'message', from: 'agent', text, at: Date.now() })
+          send(socket, { type: 'reply', agentId, text })
+        },
+        onTool: (event) => {
+          appendTranscriptLine(agentId, {
+            kind: 'tool',
+            name: event.name,
+            input: event.input,
+            summary: event.summary,
+            at: Date.now()
+          })
+          send(socket, { type: 'tool', agentId, name: event.name, input: event.input, summary: event.summary })
+        },
+        onQuestion: (event) => {
+          appendTranscriptLine(agentId, {
+            kind: 'question',
+            from: 'agent',
+            at: Date.now(),
+            question: { ...event }
+          })
+          send(socket, { type: 'question', agentId, question: { ...event } })
+        },
+        onError: (message) => send(socket, { type: 'error', agentId, message })
       },
-      onError: (message) => send(socket, { type: 'error', agentId, message })
-    })
+      workspace
+    )
 
     sessions.set(agentId, session)
 
@@ -147,6 +171,11 @@ webSocketServer.on('connection', (socket) => {
 
   send(socket, { type: 'hello', live: isLive() })
   send(socket, { type: 'roster', villagers: roster })
+
+  void (async () => {
+    const skills = await listSkills()
+    send(socket, { type: 'skills', skills })
+  })()
 
   socket.on('message', (raw) => {
     let parsed: ClientMessage
@@ -172,7 +201,12 @@ webSocketServer.on('connection', (socket) => {
 
       // Persist the player line before kicking off the reply, so transcripts
       // are always faithful even if the reply errors.
-      appendTranscriptLine(parsed.agentId, { from: 'you', text: parsed.text, at: Date.now() })
+      appendTranscriptLine(parsed.agentId, {
+        kind: 'message',
+        from: 'you',
+        text: parsed.text,
+        at: Date.now()
+      })
       session.send(parsed.text)
     } else if (parsed.type === 'history') {
       send(socket, { type: 'history', agentId: parsed.agentId, lines: loadTranscript(parsed.agentId) })
@@ -195,19 +229,46 @@ webSocketServer.on('connection', (socket) => {
         dotColor: pickDotColor(),
         // New villagers get a tent so spawning is light-weight.
         structure: 'tent-1',
-        persona: `You are ${name}. ${personaText} ${sharedVoice}`
+        persona: `You are ${name}. ${personaText}`
       }
 
       roster = [...roster, villager]
       saveRoster(roster)
       broadcast({ type: 'spawned', villager })
-    } else if (parsed.type === 'remove') {
-      if (seededIds.has(parsed.agentId)) {
-        send(socket, { type: 'error', agentId: parsed.agentId, message: 'Seed villagers cannot be removed' })
+    } else if (parsed.type === 'answer') {
+      const session = sessions.get(parsed.agentId)
+
+      if (session === undefined) {
+        return
+      }
+
+      session.answer(parsed.toolUseId, parsed.answers)
+    } else if (parsed.type === 'update') {
+      const target = roster.find((villager) => villager.id === parsed.agentId)
+
+      if (target === undefined) {
+        send(socket, { type: 'error', agentId: parsed.agentId, message: 'Unknown villager' })
 
         return
       }
 
+      const updated: Villager = {
+        ...target,
+        name: parsed.name?.trim() !== '' && parsed.name !== undefined ? parsed.name.trim() : target.name,
+        persona:
+          parsed.persona?.trim() !== '' && parsed.persona !== undefined ? parsed.persona.trim() : target.persona
+      }
+
+      roster = roster.map((villager) => (villager.id === parsed.agentId ? updated : villager))
+      saveRoster(roster)
+
+      // Close any existing session so the next message rebuilds with the new
+      // system prompt — the SDK doesn't support changing it mid-conversation.
+      sessions.get(parsed.agentId)?.close()
+      sessions.delete(parsed.agentId)
+
+      broadcast({ type: 'roster', villagers: roster })
+    } else if (parsed.type === 'remove') {
       const before = roster.length
       roster = roster.filter((villager) => villager.id !== parsed.agentId)
 
@@ -217,6 +278,7 @@ webSocketServer.on('connection', (socket) => {
 
       saveRoster(roster)
       deleteTranscript(parsed.agentId)
+      deleteWorkspace(parsed.agentId)
       sessions.get(parsed.agentId)?.close()
       sessions.delete(parsed.agentId)
       broadcast({ type: 'removed', agentId: parsed.agentId })
