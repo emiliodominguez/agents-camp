@@ -325,7 +325,10 @@ webSocketServer.on('connection', (socket) => {
     } else if (parsed.type === 'seed') {
       const seeds = defaultSeed()
       const existingIds = new Set(roster.map((v) => v.id))
-      const additions = seeds.filter((s) => !existingIds.has(s.id))
+      const liveHarnesses = new Set(harnessStatuses().filter((h) => h.live).map((h) => h.id))
+      const additions = seeds.filter(
+        (s) => !existingIds.has(s.id) && liveHarnesses.has(normalizeHarness(s.harness ?? defaultAgentHarness()))
+      )
 
       if (additions.length === 0) {
         return

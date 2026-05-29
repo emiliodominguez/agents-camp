@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
@@ -114,6 +115,29 @@ function localCredentialsPath(): string {
   return join(base, '.credentials.json')
 }
 
+/**
+ * Whether Claude Code credentials exist in the macOS login Keychain.
+ *
+ * On macOS, `claude login` stores its OAuth token in the Keychain under the
+ * service name `Claude Code-credentials` rather than in `~/.claude/.credentials.json`,
+ * so a file-only check reports `mock` even when the user is signed in.
+ *
+ * @returns true when a matching Keychain entry is present
+ */
+function hasKeychainCredentials(): boolean {
+  if (platform() !== 'darwin') {
+    return false
+  }
+
+  try {
+    execFileSync('security', ['find-generic-password', '-s', 'Claude Code-credentials'], { stdio: 'ignore' })
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function claudeAuthMode(): ClaudeAuthMode {
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     return 'subscription-token'
@@ -123,7 +147,7 @@ export function claudeAuthMode(): ClaudeAuthMode {
     return 'api-key'
   }
 
-  if (existsSync(localCredentialsPath())) {
+  if (existsSync(localCredentialsPath()) || hasKeychainCredentials()) {
     return 'local-login'
   }
 
