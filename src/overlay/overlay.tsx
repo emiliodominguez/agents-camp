@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onMount, Show } from 'solid-js'
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 
 import { activeTheme } from '../themes'
 import {
@@ -26,14 +26,24 @@ import {
   chatLog,
   closeChat,
   defaultAgentHarness,
+  dismissHarness,
+  dismissedHarnesses,
+  arcadeGame,
+  closeDoom,
+  doomMinimized,
+  doomOpen,
   harnessStatuses,
   liveMode,
   markQuestionAnswered,
   nearbyAgent,
   nearbyPlot,
+  nearbyShady,
   openChat,
   recordAgentError,
+  restoreDismissedHarnesses,
+  setArcadeGame,
   setChatAutoExpandInstructions,
+  setDoomMinimized,
   setSpawnOpen,
   spawnOpen,
   streamingReply
@@ -84,11 +94,247 @@ export function Overlay() {
         </div>
       </Show>
 
+      <Show when={nearbyShady() && !doomOpen()}>
+        <div class="panel prompt shady" role="status" aria-label="A shady figure whispers. Press E to see what he's got.">
+          <em>pst pst…</em> <span class="shady-rest">wanna play something?</span>
+          <span class="sr-only">Press E to see what he's got.</span>
+        </div>
+      </Show>
+
       <Show when={chatAgent()} keyed>{(agent) => <ChatPanel agent={agent} />}</Show>
       <Show when={spawnOpen()}><SpawnDialog /></Show>
       <Show when={skillsOpen()}><SkillsPanel /></Show>
       <Show when={usageOpen()}><UsagePanel /></Show>
+      <Show when={doomOpen()}><ArcadeCabinet /></Show>
     </>
+  )
+}
+
+/** js-dos 6.22 runtime that boots DOSBox inside the cabinet iframe. */
+const jsDosUrl = 'https://js-dos.com/6.22/current/js-dos.js'
+/** DOSBox build (js-dos rewrites this to the companion `wdosbox.wasm.js`). */
+const wdosboxUrl = 'https://js-dos.com/6.22/current/wdosbox.js'
+
+/** A DOS game the dealer keeps in his stash. */
+interface ArcadeGame {
+  id: string
+  label: string
+  tagline: string
+  /** js-dos-hosted zip (URL-encode spaces). */
+  zipUrl: string
+  /** DOSBox shell commands to launch it, run in order. */
+  run: string[]
+}
+
+/** The dealer's catalogue. Add a game by appending an entry here. */
+const arcadeGames: ArcadeGame[] = [
+  {
+    id: 'doom',
+    label: 'DOOM',
+    tagline: 'Rip and tear · 1993',
+    zipUrl: 'https://js-dos.com/cdn/upload/DOOM-@evilution.zip',
+    run: ['cd DOOM', 'DOOM.EXE']
+  },
+  {
+    id: 'duke',
+    label: 'Duke Nukem 3D',
+    tagline: 'Hail to the king · 1996',
+    zipUrl: 'https://js-dos.com/cdn/upload/Duke%20Nukem%203d-@digitalwalt.zip',
+    run: ['cd DUKE3D', 'DUKE3D.EXE']
+  }
+]
+
+/**
+ * Build a self-contained HTML document that loads js-dos and boots one game.
+ * Run inside an iframe so the emulator is fully isolated: keystrokes only reach
+ * it while the frame is focused, and removing the frame (on close) destroys the
+ * runtime, audio, and wasm outright — js-dos 6.22 has no reliable in-process
+ * teardown.
+ *
+ * @param game - The game to boot.
+ * @returns The iframe `srcdoc` document.
+ */
+function arcadeFrameSrc(game: ArcadeGame): string {
+  const args = JSON.stringify(game.run.flatMap((command) => ['-c', command]))
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; height: 100%; background-color: #000; overflow: hidden; }
+      canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; outline: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="jsdos"></canvas>
+    <script src="${jsDosUrl}"></script>
+    <script>
+      Dos(document.getElementById("jsdos"), { wdosboxUrl: "${wdosboxUrl}" }).ready(function (fs, main) {
+        fs.extract(${JSON.stringify(game.zipUrl)}).then(function () {
+          main(${args});
+        });
+      });
+    </script>
+  </body>
+</html>`
+}
+
+/**
+ * One booted game, isolated in an iframe. Owns keyboard focus (follows the
+ * minimized state) and — critically — navigates itself to `about:blank` on
+ * unmount so DOSBox's audio and main loop stop immediately. Relying on node
+ * removal alone leaves audio playing until GC in Chrome; this kills it now.
+ *
+ * @param props.game - The game to boot.
+ * @param props.onLoad - Called once the iframe document has loaded.
+ */
+function GameFrame(props: { game: ArcadeGame; onLoad: () => void }) {
+  let frame: HTMLIFrameElement | undefined
+
+  // Route the keyboard: focus the game when the cabinet is up, blur it when
+  // minimized so Phaser drives the camp again.
+  createEffect(() => {
+    if (frame === undefined) {
+      return
+    }
+
+    if (doomMinimized()) {
+      frame.blur()
+      window.focus()
+    } else {
+      frame.focus()
+      frame.contentWindow?.focus()
+    }
+  })
+
+  onCleanup(() => {
+    if (frame === undefined) {
+      return
+    }
+
+    // Unload the running document while the frame is still attached so the
+    // emulator's AudioContext and render loop tear down deterministically.
+    try {
+      frame.contentWindow?.location.replace('about:blank')
+    } catch {
+      // Cross-origin or already gone — fall back to the src swap below.
+    }
+
+    frame.src = 'about:blank'
+  })
+
+  return (
+    <iframe
+      ref={frame}
+      class="doom-dosbox"
+      title={props.game.label}
+      srcdoc={arcadeFrameSrc(props.game)}
+      sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+      onLoad={() => props.onLoad()}
+    />
+  )
+}
+
+/**
+ * The hidden arcade cabinet the shady dealer hands you. Pick a game and it
+ * boots in an isolated iframe, so minimizing just resizes the frame (the game
+ * keeps running, untouched) while closing unmounts it for a clean, total kill.
+ */
+function ArcadeCabinet() {
+  const [loaded, setLoaded] = createSignal(false)
+
+  const game = (): ArcadeGame | undefined => arcadeGames.find((entry) => entry.id === arcadeGame())
+
+  const pick = (id: string): void => {
+    setLoaded(false)
+    setArcadeGame(id)
+  }
+
+  return (
+    <div
+      class="doom-backdrop"
+      classList={{ minimized: doomMinimized() }}
+      role="dialog"
+      aria-modal={doomMinimized() ? undefined : 'true'}
+      aria-label="Arcade cabinet"
+    >
+      <div class="doom-cabinet">
+        <header class="doom-cabinet-bar">
+          <button
+            type="button"
+            class="doom-cabinet-title"
+            onClick={() => setDoomMinimized((value) => !value)}
+            title={doomMinimized() ? 'Back to the game' : 'Minimize — keep playing the camp'}
+          >
+            🕹️ The dealer's stash{game() ? ` — ${game()?.label}` : ''}
+          </button>
+          <Show when={game()}>
+            <button
+              type="button"
+              class="doom-min"
+              onClick={() => setArcadeGame(undefined)}
+              title="Back to the game list"
+              aria-label="Back to the game list"
+            >
+              ↩
+            </button>
+          </Show>
+          <button
+            type="button"
+            class="doom-min"
+            onClick={() => setDoomMinimized((value) => !value)}
+            aria-label={doomMinimized() ? 'Restore the cabinet' : 'Minimize the cabinet'}
+          >
+            {doomMinimized() ? '▢' : '—'}
+          </button>
+          <button type="button" class="doom-close" onClick={() => closeDoom()} aria-label="Quit the cabinet">
+            ✕
+          </button>
+        </header>
+
+        <div class="doom-screen">
+          <Show
+            when={game()}
+            keyed
+            fallback={
+              <div class="arcade-picker">
+                <p class="arcade-picker-title">Pick your poison</p>
+                <div class="arcade-picker-grid">
+                  <For each={arcadeGames}>
+                    {(entry) => (
+                      <button type="button" class="arcade-pick" onClick={() => pick(entry.id)}>
+                        <span class="arcade-pick-label">{entry.label}</span>
+                        <span class="arcade-pick-tagline">{entry.tagline}</span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            }
+          >
+            {(selected) => (
+              <>
+                <GameFrame game={selected} onLoad={() => setLoaded(true)} />
+                <Show when={!loaded()}>
+                  <p class="doom-status">Booting DOSBox &amp; downloading {selected.label} (~6 MB)…</p>
+                </Show>
+              </>
+            )}
+          </Show>
+        </div>
+
+        <p class="doom-hint">
+          <Show
+            when={game()}
+            fallback={<>Choose a game — it boots right here in the cabinet.</>}
+          >
+            Click the screen to grab the keyboard. Hit <strong>—</strong> to minimize and roam the camp (the game keeps
+            running), <strong>↩</strong> to switch games, or <strong>✕</strong> to quit.
+          </Show>
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -142,7 +388,14 @@ function RosterPanel() {
       .filter((harness) => harness.live)
       .map((harness) => harness.label)
 
-  const unavailableHarnesses = () => harnessStatuses().filter((harness) => !harness.live)
+  const unavailableHarnesses = () =>
+    harnessStatuses().filter((harness) => !harness.live && !dismissedHarnesses().includes(harness.id))
+
+  /** Short labels of the unavailable harnesses the player has silenced. */
+  const dismissedLabels = (): string[] =>
+    harnessStatuses()
+      .filter((harness) => !harness.live && dismissedHarnesses().includes(harness.id))
+      .map((harness) => harnessById(harness.id).shortLabel)
 
   const connectionTitle = (): string => {
     if (agentConnectionState() !== 'connected') {
@@ -310,7 +563,17 @@ function RosterPanel() {
               id="roster-runtime-status"
             >
               <span class="conn-dot" aria-hidden="true" />
-              {connectionText()}
+              <span class="conn-text">{connectionText()}</span>
+              <Show when={dismissedLabels().length > 0}>
+                <button
+                  type="button"
+                  class="conn-restore"
+                  onClick={() => restoreDismissedHarnesses()}
+                  title={`Re-show the hidden ${dismissedLabels().join(', ')} warning${dismissedLabels().length === 1 ? '' : 's'}`}
+                >
+                  Restore {dismissedLabels().join(', ')}
+                </button>
+              </Show>
             </p>
 
             <div class="roster-actions">
@@ -324,7 +587,7 @@ function RosterPanel() {
           </div>
 
           <Show when={agentConnectionState() !== 'connected' || unavailableHarnesses().length > 0}>
-            <RuntimeNotice unavailableHarnesses={unavailableHarnesses()} />
+            <RuntimeNotice unavailableHarnesses={unavailableHarnesses()} onDismiss={dismissHarness} />
           </Show>
         </div>
       </Show>
@@ -332,7 +595,7 @@ function RosterPanel() {
   )
 }
 
-function RuntimeNotice(props: { unavailableHarnesses: HarnessRuntimeStatus[] }) {
+function RuntimeNotice(props: { unavailableHarnesses: HarnessRuntimeStatus[]; onDismiss: (id: AgentHarnessId) => void }) {
   const title = (): string => {
     if (agentConnectionState() === 'connecting') {
       return 'Connecting to the agent backend'
@@ -370,6 +633,15 @@ function RuntimeNotice(props: { unavailableHarnesses: HarnessRuntimeStatus[] }) 
                 <span class="runtime-row-title">
                   <span class={`runtime-pill ${harness.state}`}>{harness.state.replace('-', ' ')}</span>
                   {harness.label}
+                  <button
+                    type="button"
+                    class="runtime-dismiss"
+                    onClick={() => props.onDismiss(harness.id)}
+                    title={`Hide the ${harness.label} warning`}
+                    aria-label={`Hide the ${harness.label} warning`}
+                  >
+                    ✕
+                  </button>
                 </span>
                 <span class="runtime-detail">{harness.detail}</span>
                 <ol>

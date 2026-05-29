@@ -24,6 +24,12 @@ export const campRows = 20
 export const playerSpawn = { column: 12, row: 13 }
 
 /**
+ * Where the shady arcade dealer lurks — tucked into a quiet corner of the camp.
+ * Walk up and he'll whisper "pst pst…"; talk to him to boot a hidden game.
+ */
+export const shadyNpcSpawn = { column: 3, row: 16 }
+
+/**
  * The seed villagers — the ones who exist on first run and whose homes are
  * baked into the theme's layout. Spawned villagers are added at runtime.
  */

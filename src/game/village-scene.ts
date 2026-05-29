@@ -5,9 +5,13 @@ import { Character, type Facing } from './character'
 import { onAgentStatus, onRemoved, onRoster, onSpawned } from '../services/agent-client'
 import {
   chatAgent,
+  doomMinimized,
+  doomOpen,
   openChat,
+  openDoom,
   setNearbyAgent,
   setNearbyPlot,
+  setNearbyShady,
   setSpawnOpen,
   spawnOpen
 } from '../overlay/state'
@@ -21,6 +25,7 @@ import {
   campRows,
   playerSpawn,
   seedVillagers,
+  shadyNpcSpawn,
   tileSize,
   tileToPixel
 } from './world'
@@ -66,6 +71,12 @@ interface WanderState {
  */
 export class VillageScene extends Phaser.Scene {
   private player!: Character
+  /** The shady arcade dealer who hides DOOM. Not part of the roster. */
+  private shadyNpc!: Character
+  /** The "pst pst…" speech bubble shown above the dealer when the player is near. */
+  private shadyBubble!: Phaser.GameObjects.Text
+  /** Whether the player is currently within talking range of the dealer. */
+  private nearbyShady = false
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined
   private keys: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key> | undefined
   private talkKey: Phaser.Input.Keyboard.Key | undefined
@@ -138,6 +149,7 @@ export class VillageScene extends Phaser.Scene {
     this.drawObjects()
     this.syncPlots()
     this.spawnPlayer()
+    this.spawnShadyNpc()
     this.bindInput()
 
     this.cameras.main.setBackgroundColor(activeTheme.backgroundColor)
@@ -194,17 +206,38 @@ export class VillageScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    // While DOOM is open full-screen the cabinet owns the keyboard — don't let
+    // E or WASD leak into the camp. When minimized the camp stays playable.
+    if (doomOpen() && !doomMinimized()) {
+      this.syncOverlays()
+
+      return
+    }
+
     this.handleTalkKey()
     this.updateWanderers(delta)
 
     // Freeze the player and proximity changes while a chat or spawn dialog is
     // open so typing doesn't drive the avatar.
     if (chatAgent() !== undefined || spawnOpen()) {
+      this.syncOverlays()
+
       return
     }
 
     this.movePlayer(delta)
     this.updateProximity()
+    this.syncOverlays()
+  }
+
+  /** Keep every character's floating name/status overlay tracking its sprite. */
+  private syncOverlays(): void {
+    this.player.syncOverlay()
+    this.shadyNpc.syncOverlay()
+
+    for (const character of this.characters.values()) {
+      character.syncOverlay()
+    }
   }
 
   /**
@@ -315,6 +348,12 @@ export class VillageScene extends Phaser.Scene {
     const active = document.activeElement
 
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      return
+    }
+
+    if (this.nearbyShady) {
+      openDoom()
+
       return
     }
 
@@ -593,13 +632,43 @@ export class VillageScene extends Phaser.Scene {
       name: 'You',
       texture: textureKey,
       status: 'idle',
-      size: tileSize * 1.4
+      size: tileSize * 1.4,
+      showStatus: false
     })
 
     // Tint the player so they're visually distinct from the Planner (who
     // shares the same citizen sheet).
     this.player.setSpriteTint(0xfff0d0)
     this.player.setDepth(playerSpawn.row + 0.5)
+  }
+
+  /**
+   * Spawn the shady arcade dealer in his corner. He never wanders or chats;
+   * the only thing he offers is a whispered "pst pst…" and, if you talk to him
+   * (E), a hidden game. Uses a forest-creature sheet for a suitably dodgy look.
+   */
+  private spawnShadyNpc(): void {
+    const { x, y } = tileToPixel(shadyNpcSpawn.column, shadyNpcSpawn.row)
+
+    this.shadyNpc = new Character(this, x, y, {
+      name: '???',
+      texture: 'forest-1',
+      status: 'idle',
+      size: tileSize * 1.4,
+      showStatus: false
+    })
+    this.shadyNpc.setDepth(shadyNpcSpawn.row + 0.5)
+
+    this.shadyBubble = this.add.text(x, y - tileSize * 0.7, 'pst pst…', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      color: '#ffe1a0',
+      backgroundColor: 'rgba(20, 16, 28, 0.85)',
+      padding: { x: 5, y: 3 }
+    })
+    this.shadyBubble.setOrigin(0.5, 1)
+    this.shadyBubble.setDepth(9001)
+    this.shadyBubble.setVisible(false)
   }
 
   private bindInput(): void {
@@ -700,10 +769,25 @@ export class VillageScene extends Phaser.Scene {
       }
     }
 
+    // The dealer competes with villagers; if he's the nearest thing in range he
+    // wins, whispers "pst pst…", and suppresses the agent/plot prompts.
+    const shadyDistance = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.shadyNpc.x, this.shadyNpc.y)
+    const shadyNear = shadyDistance < interactionRadius && shadyDistance < closestDistance
+
+    if (shadyNear !== this.nearbyShady) {
+      this.nearbyShady = shadyNear
+      this.shadyBubble.setVisible(shadyNear)
+      setNearbyShady(shadyNear)
+    }
+
+    if (shadyNear) {
+      closestId = undefined
+    }
+
     let closestPlot: { column: number; row: number } | undefined
     let plotDistance = interactionRadius
 
-    if (closestId === undefined) {
+    if (closestId === undefined && !shadyNear) {
       for (const plot of this.activePlots()) {
         const { x, y } = tileToPixel(plot.column, plot.row)
         const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y)

@@ -79,6 +79,8 @@ body {
 
 #overlay .panel {
   pointer-events: auto;
+  /* Above a minimized DOOM cabinet (z 5), below a full-screen one (z 50). */
+  z-index: 10;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
@@ -522,6 +524,38 @@ body {
   flex: none;
 }
 
+.roster .conn .conn-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster .conn .conn-restore {
+  margin-left: auto;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid rgba(139, 160, 110, 0.32);
+  border-radius: 4px;
+  background-color: transparent;
+  color: #b2bea6;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    color 0.14s,
+    border-color 0.14s;
+}
+
+.roster .conn .conn-restore::before {
+  content: '↩ ';
+}
+
+.roster .conn .conn-restore:hover {
+  color: #eef3e4;
+  border-color: rgba(155, 185, 118, 0.7);
+}
+
 .roster .conn.live .conn-dot {
   background: #6bd6a4;
   box-shadow: 0 0 6px 1px #6bd6a4;
@@ -576,6 +610,24 @@ body {
   align-items: center;
   gap: 7px;
   font-size: 11px;
+  color: #fff1cb;
+}
+
+.runtime-dismiss {
+  margin-left: auto;
+  flex: none;
+  border: 1px solid rgba(255, 225, 160, 0.32);
+  border-radius: 4px;
+  padding: 1px 6px;
+  background-color: transparent;
+  color: #dcc699;
+  font-size: 10px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.runtime-dismiss:hover {
+  border-color: rgba(255, 225, 160, 0.6);
   color: #fff1cb;
 }
 
@@ -1263,6 +1315,218 @@ body {
   from {
     opacity: 0;
   }
+}
+
+.prompt.shady {
+  border-color: #6a4a9a;
+  color: #e9defc;
+}
+
+.prompt.shady em {
+  font-style: italic;
+  color: #c7a8ff;
+}
+
+.prompt.shady .shady-rest {
+  opacity: 0.85;
+}
+
+.doom-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: rgba(6, 5, 10, 0.86);
+  backdrop-filter: blur(2px);
+  animation: rise 0.18s ease-out;
+}
+
+.doom-cabinet {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  max-height: 100%;
+  border: 2px solid #5a3a8a;
+  border-radius: 14px;
+  background-color: #1a1422;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.6),
+    0 18px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.doom-cabinet-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background-color: #241a30;
+  border-bottom: 1px solid rgba(160, 120, 220, 0.3);
+}
+
+.doom-cabinet-title {
+  flex: 1;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e9defc;
+  cursor: pointer;
+}
+
+.doom-min,
+.doom-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(200, 160, 255, 0.35);
+  border-radius: 6px;
+  background-color: transparent;
+  color: #d9c9f5;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.14s;
+}
+
+.doom-min:hover,
+.doom-close:hover {
+  background-color: rgba(120, 80, 180, 0.35);
+}
+
+/* Minimized: the cabinet shrinks to a corner window and the backdrop stops
+   blocking the camp, so the player can roam while the emulator keeps running. */
+.doom-backdrop.minimized {
+  z-index: 5;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px;
+  background-color: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.doom-backdrop.minimized .doom-cabinet {
+  width: min(340px, 60vw);
+  pointer-events: auto;
+}
+
+.doom-backdrop.minimized .doom-hint {
+  display: none;
+}
+
+.doom-screen {
+  position: relative;
+  display: flex;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+}
+
+.doom-dosbox {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background-color: #000;
+  image-rendering: pixelated;
+  outline: none;
+}
+
+.doom-status,
+.doom-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 24px;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.doom-status {
+  color: #c7a8ff;
+}
+
+.doom-error {
+  color: #ffb3b3;
+}
+
+.doom-hint {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: #b9a9d6;
+  background-color: #1a1422;
+}
+
+.arcade-picker {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.arcade-picker-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c7a8ff;
+}
+
+.arcade-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.arcade-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid rgba(160, 120, 220, 0.4);
+  border-radius: 10px;
+  background-color: rgba(36, 26, 48, 0.9);
+  color: #e9defc;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 0.14s,
+    border-color 0.14s,
+    transform 0.08s;
+}
+
+.arcade-pick:hover {
+  border-color: #9a6ad0;
+  background-color: rgba(58, 40, 82, 0.95);
+  transform: translateY(-1px);
+}
+
+.arcade-pick-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.arcade-pick-tagline {
+  font-size: 11px;
+  color: #b9a9d6;
 }
 
 .chat {

@@ -21,6 +21,31 @@ const [nearbyAgent, setNearbyAgentSignal] = createSignal<Villager | undefined>(u
 /** Cell of an empty plot the player is near (drives the "Spawn villager" prompt). */
 const [nearbyPlot, setNearbyPlot] = createSignal<{ column: number; row: number } | undefined>(undefined)
 
+/** Whether the player is standing near the shady arcade dealer ("pst pst…"). */
+const [nearbyShady, setNearbyShady] = createSignal(false)
+
+/** Whether the hidden arcade cabinet session exists (emulator mounted). */
+const [doomOpen, setDoomOpen] = createSignal(false)
+
+/** Whether the open cabinet is shrunk to a corner so the camp stays playable. */
+const [doomMinimized, setDoomMinimized] = createSignal(false)
+
+/** Id of the game booted in the cabinet, or undefined while the picker is shown. */
+const [arcadeGame, setArcadeGame] = createSignal<string | undefined>(undefined)
+
+/** Open (or restore) the arcade cabinet, always un-minimized. */
+function openDoom(): void {
+  setDoomOpen(true)
+  setDoomMinimized(false)
+}
+
+/** Quit the cabinet entirely (tears down the emulator on unmount). */
+function closeDoom(): void {
+  setDoomOpen(false)
+  setDoomMinimized(false)
+  setArcadeGame(undefined)
+}
+
 /** The villager the player has opened a chat with, or undefined when closed. */
 const [chatAgent, setChatAgent] = createSignal<Villager | undefined>(undefined)
 
@@ -51,6 +76,23 @@ const [agentConnectionState, setAgentConnectionState] = createSignal<AgentConnec
 /** Backend runtime availability, keyed by harness. */
 const [harnessStatuses, setHarnessStatuses] = createSignal<HarnessRuntimeStatus[]>([])
 
+/** localStorage key for harness warnings the player has dismissed. */
+const dismissedHarnessesKey = 'agents-camp:dismissed-harnesses'
+
+/** Load the dismissed-harness set from localStorage so it survives reloads. */
+function loadDismissedHarnesses(): AgentHarnessId[] {
+  try {
+    const raw = window.localStorage.getItem(dismissedHarnessesKey)
+
+    return raw === null ? [] : (JSON.parse(raw) as AgentHarnessId[])
+  } catch {
+    return []
+  }
+}
+
+/** Harness ids whose "needs attention" warning the player has dismissed. */
+const [dismissedHarnesses, setDismissedHarnesses] = createSignal<AgentHarnessId[]>(loadDismissedHarnesses())
+
 /** Default harness used by the backend for new or legacy villagers. */
 const [defaultAgentHarness, setDefaultAgentHarness] = createSignal<AgentHarnessId>(defaultHarness)
 
@@ -61,6 +103,16 @@ export {
   nearbyAgent,
   nearbyPlot,
   setNearbyPlot,
+  nearbyShady,
+  setNearbyShady,
+  doomOpen,
+  setDoomOpen,
+  doomMinimized,
+  setDoomMinimized,
+  arcadeGame,
+  setArcadeGame,
+  openDoom,
+  closeDoom,
   chatAgent,
   spawnOpen,
   setSpawnOpen,
@@ -71,8 +123,48 @@ export {
   agentConnectionState,
   setAgentConnectionState,
   harnessStatuses,
+  dismissedHarnesses,
   defaultAgentHarness,
   agentStatuses
+}
+
+/** Persist the dismissed-harness set to localStorage. */
+function persistDismissedHarnesses(ids: AgentHarnessId[]): void {
+  try {
+    if (ids.length === 0) {
+      window.localStorage.removeItem(dismissedHarnessesKey)
+    } else {
+      window.localStorage.setItem(dismissedHarnessesKey, JSON.stringify(ids))
+    }
+  } catch {
+    // Storage unavailable — dismissals just won't persist across reloads.
+  }
+}
+
+/**
+ * Dismiss a harness's "needs attention" warning so it stops nagging in the
+ * roster. The harness still works if its runtime later comes online; this only
+ * silences the notice for harnesses the player doesn't use.
+ *
+ * @param id - The harness to silence.
+ */
+export function dismissHarness(id: AgentHarnessId): void {
+  setDismissedHarnesses((current) => {
+    if (current.includes(id)) {
+      return current
+    }
+
+    const next = [...current, id]
+    persistDismissedHarnesses(next)
+
+    return next
+  })
+}
+
+/** Restore all dismissed harness warnings. */
+export function restoreDismissedHarnesses(): void {
+  setDismissedHarnesses([])
+  persistDismissedHarnesses([])
 }
 
 /** Record backend runtime status from the WebSocket hello message. */
