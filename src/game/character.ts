@@ -27,6 +27,13 @@ export function motionAnimationKey(textureKey: string, facing: Facing, state: 'i
   return `${textureKey}-${sheet}-${state}`
 }
 
+/**
+ * Depth for the floating name/status overlays. Kept well above any world
+ * geometry (ground, structures, characters) so labels are never chopped by a
+ * building drawn in the row below.
+ */
+const overlayDepth = 9000
+
 /** Options for constructing a character. */
 export interface CharacterOptions {
   /** Display name on the floor label. */
@@ -37,6 +44,8 @@ export interface CharacterOptions {
   status: AgentStatus
   /** Rendered sprite size in pixels (source frames are scaled to this). */
   size: number
+  /** Show the floating status badge above the head. Off for the player. */
+  showStatus?: boolean
 }
 
 /**
@@ -47,8 +56,10 @@ export interface CharacterOptions {
 export class Character extends Phaser.GameObjects.Container {
   private readonly sprite: Phaser.GameObjects.Sprite
   private readonly label: Phaser.GameObjects.Text
-  private readonly bubble: Phaser.GameObjects.Text
+  private readonly bubble: Phaser.GameObjects.Text | undefined
   private readonly textureKey: string
+  private readonly labelOffsetY: number
+  private readonly bubbleOffsetY: number
 
   private facing: Facing = 'down'
   private moving = false
@@ -61,27 +72,52 @@ export class Character extends Phaser.GameObjects.Container {
 
     this.textureKey = options.texture
     this.radius = options.size * 0.6
+    this.labelOffsetY = options.size * 0.5
+    this.bubbleOffsetY = -options.size * 0.55
 
     this.sprite = scene.add.sprite(0, 0, `${options.texture}-d-idle`)
     this.sprite.setDisplaySize(options.size, options.size)
     this.sprite.play(motionAnimationKey(this.textureKey, 'down', 'idle'))
+    this.add(this.sprite)
 
-    this.label = scene.add.text(0, options.size * 0.5, options.name, {
+    // The name label and status badge live at the top of the display list
+    // (not inside the container) so structures in the row below never chop
+    // them. The scene keeps their positions in sync via syncOverlay().
+    this.label = scene.add.text(x, y + this.labelOffsetY, options.name, {
       fontFamily: 'ui-monospace, monospace',
       fontSize: '11px',
       color: '#e6e9f0'
     })
     this.label.setOrigin(0.5, 0)
     this.label.setShadow(0, 1, '#000000', 2)
+    this.label.setDepth(overlayDepth)
 
-    this.bubble = scene.add.text(0, -options.size * 0.55, statusGlyph[options.status], {
-      fontSize: '15px'
-    })
-    this.bubble.setOrigin(0.5, 0.5)
-
-    this.add([this.sprite, this.label, this.bubble])
+    if (options.showStatus !== false) {
+      this.bubble = scene.add.text(x, y + this.bubbleOffsetY, statusGlyph[options.status], {
+        fontSize: '15px'
+      })
+      this.bubble.setOrigin(0.5, 0.5)
+      this.bubble.setDepth(overlayDepth)
+    }
 
     scene.add.existing(this)
+  }
+
+  /**
+   * Reposition the floating name/status overlays to track the character. Called
+   * by the scene each frame because the overlays are top-level objects rather
+   * than container children.
+   */
+  syncOverlay(): void {
+    this.label.setPosition(this.x, this.y + this.labelOffsetY)
+    this.bubble?.setPosition(this.x, this.y + this.bubbleOffsetY)
+  }
+
+  /** Destroy the character and its top-level overlays together. */
+  override destroy(fromScene?: boolean): void {
+    this.label.destroy()
+    this.bubble?.destroy()
+    super.destroy(fromScene)
   }
 
   /**
@@ -116,7 +152,7 @@ export class Character extends Phaser.GameObjects.Container {
    * @param status - The new lifecycle state to display.
    */
   setStatus(status: AgentStatus): void {
-    this.bubble.setText(statusGlyph[status])
+    this.bubble?.setText(statusGlyph[status])
   }
 
   /**
